@@ -1,5 +1,9 @@
 import asyncio
 import os
+import sys
+
+# Aggiunge la root folder al path di python per risolvere l'errore ModuleNotFoundError su Render
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
