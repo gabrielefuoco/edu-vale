@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
+from aiohttp import web
 from dotenv import load_dotenv
 
 from bot.middlewares import AuthMiddleware
@@ -13,6 +14,19 @@ from bot.scheduler import setup_scheduler
 from bot.handlers import commands, fsm_wizards, progress, chat
 
 load_dotenv()
+
+async def health_check(request):
+    return web.Response(text="Bot is running!")
+
+async def start_dummy_server():
+    app = web.Application()
+    app.router.add_get("/", health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Dummy web server running on port {port} to satisfy Render health checks.")
 
 async def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -43,6 +57,9 @@ async def main():
         BotCommand(command="esporta", description="Esporta i dati in CSV")
     ]
     await bot.set_my_commands(commands_list)
+    
+    # Avvia il server web fittizio per Render
+    await start_dummy_server()
     
     print("Bot avviato!")
     await dp.start_polling(bot)
