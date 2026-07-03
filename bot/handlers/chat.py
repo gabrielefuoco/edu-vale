@@ -7,6 +7,11 @@ from services.ai_agent import chat_with_agent, summarize_context
 from database.connection import get_collection
 from services.sheets_service import append_session_to_sheet
 
+from services.sheets_service import append_session_to_sheet
+
+def format_tool_args(args: dict) -> str:
+    return "\n".join([f"• **{k}**: {v}" for k, v in args.items()])
+
 router = Router()
 
 def get_system_prompt() -> dict:
@@ -64,11 +69,15 @@ async def chat_handler(message: Message, state: FSMContext):
     # Call Mistral
     bot_msg, tool_calls = await chat_with_agent(messages)
     
-    # If no tool calls, just answer and save context
+    # Se non ci sono chiamate ai Tool, risponde e basta
     if not tool_calls:
         messages.append({"role": "assistant", "content": bot_msg.content})
         await state.update_data(messages=messages)
-        await message.answer(bot_msg.content)
+        try:
+            await message.answer(bot_msg.content, parse_mode="Markdown")
+        except Exception:
+            # Fallback se il markdown generato ha sintassi non valida per Telegram
+            await message.answer(bot_msg.content)
         return
         
     # Handle Tool Calls
@@ -91,10 +100,19 @@ async def chat_handler(message: Message, state: FSMContext):
         ])
         
         queue_msg = f" (1 di {len(tools_list) + 1})" if tools_list else ""
-        await message.answer(
-            f"L'agente vuole eseguire: **{first_tool['name']}**{queue_msg}\nDati:\n{json.dumps(first_tool['args'], indent=2)}\n\nConfermi?",
-            reply_markup=markup
-        )
+        formatted_args = format_tool_args(first_tool['args'])
+        
+        try:
+            await message.answer(
+                f"L'agente vuole eseguire l'azione: **{first_tool['name']}**{queue_msg}\n\n{formatted_args}\n\nConfermi?",
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await message.answer(
+                f"L'agente vuole eseguire l'azione: {first_tool['name']}{queue_msg}\n\n{formatted_args}\n\nConfermi?",
+                reply_markup=markup
+            )
         return
 
 @router.callback_query(F.data == "confirm_tool")
@@ -140,10 +158,19 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
         ])
         
         queue_msg = f" (rimanenti in coda: {len(queue)})" if queue else " (ultimo in coda)"
-        await callback.message.edit_text(
-            f"{res_text}\n\nAzione successiva:\nL'agente vuole eseguire: **{next_tool['name']}**{queue_msg}\nDati:\n{json.dumps(next_tool['args'], indent=2)}\n\nConfermi?", 
-            reply_markup=markup
-        )
+        formatted_args = format_tool_args(next_tool['args'])
+        
+        try:
+            await callback.message.edit_text(
+                f"{res_text}\n\nAzione successiva:\n**{next_tool['name']}**{queue_msg}\n\n{formatted_args}\n\nConfermi?", 
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await callback.message.edit_text(
+                f"{res_text}\n\nAzione successiva:\n{next_tool['name']}{queue_msg}\n\n{formatted_args}\n\nConfermi?", 
+                reply_markup=markup
+            )
     else:
         await state.update_data(messages=messages, pending_tool=None, pending_args=None, pending_tools_queue=[])
         await callback.message.edit_text(f"{res_text}\n\n✅ Tutte le azioni richieste sono state completate.")
@@ -172,10 +199,19 @@ async def cancel_tool_call(callback: CallbackQuery, state: FSMContext):
         ])
         
         queue_msg = f" (rimanenti in coda: {len(queue)})" if queue else " (ultimo in coda)"
-        await callback.message.edit_text(
-            f"❌ Azione '{fn_name}' annullata.\nPuoi scrivermi qui sotto le correzioni da applicare.\n\nAzione successiva:\nL'agente vuole eseguire: **{next_tool['name']}**{queue_msg}\nDati:\n{json.dumps(next_tool['args'], indent=2)}\n\nConfermi?", 
-            reply_markup=markup
-        )
+        formatted_args = format_tool_args(next_tool['args'])
+        
+        try:
+            await callback.message.edit_text(
+                f"❌ Azione '{fn_name}' annullata.\nPuoi scrivermi qui sotto le correzioni da applicare.\n\nAzione successiva:\n**{next_tool['name']}**{queue_msg}\n\n{formatted_args}\n\nConfermi?", 
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await callback.message.edit_text(
+                f"❌ Azione '{fn_name}' annullata.\nPuoi scrivermi qui sotto le correzioni da applicare.\n\nAzione successiva:\n{next_tool['name']}{queue_msg}\n\n{formatted_args}\n\nConfermi?", 
+                reply_markup=markup
+            )
     else:
         await state.update_data(messages=messages, pending_tool=None, pending_args=None, pending_tools_queue=[])
         await callback.message.edit_text(f"❌ Azione '{fn_name}' annullata.\n\nScrivi qui sotto cosa c'era di sbagliato e ricreerò l'azione corretta.")
