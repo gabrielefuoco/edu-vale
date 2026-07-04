@@ -35,9 +35,29 @@ async def cmd_foglio(message: Message):
 @router.message(Command("reset"))
 async def cmd_reset(message: Message, state: FSMContext):
     await state.clear()
-    col = await get_collection("chat_sessions")
-    await col.delete_one({"user_id": message.from_user.id})
-    await message.answer("Memoria chat svuotata. L'agente è ripartito da zero.")
+    col = await get_collection("chat_history")
+    await col.delete_many({"user_id": message.from_user.id})
+    await message.answer("🔄 Memoria della chat azzerata! L'agente ha dimenticato il contesto recente e ripartirà da zero.")
+
+@router.message(Command("nuke"))
+async def cmd_nuke(message: Message, state: FSMContext):
+    from services.sheets_service import clear_all_sheets
+    await state.clear()
+    
+    # Reset DB
+    col = await get_collection("chat_history")
+    await col.delete_many({})
+    col = await get_collection("utenti")
+    await col.delete_many({})
+    col = await get_collection("programmazione")
+    await col.delete_many({})
+    col = await get_collection("sessioni")
+    await col.delete_many({})
+    
+    # Reset Fogli Google
+    success, msg = await clear_all_sheets()
+    
+    await message.answer(f"💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione e Sessioni azzerati.\n📊 Fogli: {msg}")
 
 @router.message(Command("annulla"))
 async def cmd_annulla(message: Message, state: FSMContext):

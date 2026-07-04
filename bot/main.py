@@ -54,9 +54,10 @@ async def main():
         BotCommand(command="aiuto", description="Mostra la lista dei comandi"),
         BotCommand(command="oggi", description="Mostra l'agenda di oggi"),
         BotCommand(command="utenti", description="Mostra gli utenti in carico"),
-        BotCommand(command="foglio", description="Link al file Google Sheets"),
-        BotCommand(command="esporta", description="Esporta i dati in CSV"),
-        BotCommand(command="reset", description="Pulisce la memoria e riavvia l'agente")
+        BotCommand(command="foglio", description="Link al Foglio Google"),
+        BotCommand(command="esporta", description="Esporta i dati (PDF/Excel)"),
+        BotCommand(command="reset", description="Azzera la memoria della chat"),
+        BotCommand(command="nuke", description="[TEST] Resetta tutto il DB e i Fogli")
     ]
     await bot.set_my_commands(commands_list)
     

@@ -63,3 +63,18 @@ async def append_session_to_sheet(data: dict):
         return success, message
     except Exception as e:
         return False, f"Errore salvataggio Google Sheets: {str(e)}"
+
+def _sync_clear_all_sheets():
+    spreadsheet = get_spreadsheet()
+    if not spreadsheet:
+        return False, "Impossibile accedere al foglio Google."
+    try:
+        for ws in spreadsheet.worksheets():
+            ws.clear()
+            ws.append_row(["Giorno", "Ore", "Utente", "Luogo", "Attività svolte"])
+        return True, "Fogli Google azzerati e re-intestati."
+    except Exception as e:
+        return False, f"Errore pulizia Fogli: {str(e)}"
+
+async def clear_all_sheets():
+    return await asyncio.to_thread(_sync_clear_all_sheets)
