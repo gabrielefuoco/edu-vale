@@ -9,7 +9,8 @@ from pydantic import ValidationError
 from database.models import (
     ToolRegistraSessione, ToolPianificaSessione, ToolCreaUtente, 
     ToolCercaUtenti, ToolLeggiStoricoSessioni, ToolLeggiAgenda, 
-    ToolEliminaSessionePianificata, ToolModificaUtente, ToolRichiediChiarimentoUtente
+    ToolEliminaSessionePianificata, ToolModificaUtente, ToolRichiediChiarimentoUtente,
+    ToolSalvaNotaUtente
 )
 
 from aiogram import Router, F
@@ -29,7 +30,8 @@ TOOL_MODELS = {
     "leggi_agenda": ToolLeggiAgenda,
     "elimina_sessione_pianificata": ToolEliminaSessionePianificata,
     "modifica_utente": ToolModificaUtente,
-    "richiedi_chiarimento_utente": ToolRichiediChiarimentoUtente
+    "richiedi_chiarimento_utente": ToolRichiediChiarimentoUtente,
+    "salva_nota_utente": ToolSalvaNotaUtente
 }
 
 def format_tool_args(args: dict) -> str:
@@ -157,11 +159,19 @@ async def chat_handler(message: Message, state: FSMContext):
                 has_read_tools = True
                 query = fn_args.get("query", "")
                 col = await get_collection("utenti")
-                res = await col.find({"nome": {"$regex": query, "$options": "i"}}).to_list(10)
-                if not res:
-                    res_str = "Nessun utente trovato con questo nome. Valuta se usare crea_utente."
+                
+                try:
+                    # Fuzzy Search con Atlas
+                    pipeline = [{"$search": {"index": "default", "text": {"query": query, "path": "nome", "fuzzy": {}}}}]
+                    utenti = await col.aggregate(pipeline).to_list(10)
+                except Exception:
+                    # Fallback robusto al Regex se l'indice non esiste su Atlas
+                    utenti = await col.find({"nome": {"$regex": query, "$options": "i"}}).to_list(10)
+                
+                if utenti:
+                    res_str = "Utenti trovati:\n" + "\n".join([f"- {u.get('nome')} (Ore: {u.get('ore_settimanali', 0)}), Note: {u.get('note', '')}, Preferenze Episodiche: {u.get('preferenze', [])}" for u in utenti])
                 else:
-                    res_str = json.dumps([{"nome": u["nome"], "ore_settimanali": u.get("ore_settimanali")} for u in res])
+                    res_str = "Nessun utente trovato con quel nome."
                 messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
                 
             elif fn_name == "leggi_storico_sessioni":
@@ -266,7 +276,8 @@ async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):
                 await col.insert_one({
                     "nome": fn_args.get("nome"),
                     "ore_settimanali": fn_args.get("ore_settimanali", 0),
-                    "note": fn_args.get("note", "")
+                    "note": fn_args.get("note", ""),
+                    "preferenze": []
                 })
                 res_text += f"- Utente creato: {fn_args.get('nome')}\n"
                 messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente creato con successo."})
@@ -294,11 +305,20 @@ async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):
                 
             if update_data:
                 await col.update_one({"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}}, {"$set": update_data})
-                res_text += f"- Utente aggiornato: {fn_args.get('nome_utente')}\n"
+                res_text += f"- Utente {fn_args.get('nome_utente', '')} aggiornato.\n"
                 messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente aggiornato con successo."})
             else:
-                res_text += f"- Nessuna modifica specificata per {fn_args.get('nome_utente')}\n"
+                res_text += f"- Nessun campo da aggiornare per {fn_args.get('nome_utente', '')}.\n"
                 messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: Nessuna modifica specificata."})
+
+        elif fn_name == "salva_nota_utente":
+            col = await get_collection("utenti")
+            await col.update_one(
+                {"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}},
+                {"$push": {"preferenze": fn_args.get("nota_testuale")}}
+            )
+            res_text += f"- Nota salvata in memoria per {fn_args.get('nome_utente')}.\n"
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Nota utente salvata in memoria episodica."})
             
     await state.update_data(pending_tools_queue=[], messages=messages)
     try:
@@ -383,7 +403,8 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
             await col.insert_one({
                 "nome": fn_args.get("nome"),
                 "ore_settimanali": fn_args.get("ore_settimanali", 0),
-                "note": fn_args.get("note", "")
+                "note": fn_args.get("note", ""),
+                "preferenze": fn_args.get("preferenze", [])
             })
             res_text = "✅ Utente creato."
             messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente creato con successo."})
@@ -417,6 +438,15 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
             res_text = "⚠️ Nessun campo da aggiornare."
             messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: Nessuna modifica specificata."})
             
+    elif fn_name == "salva_nota_utente":
+        col = await get_collection("utenti")
+        await col.update_one(
+            {"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}},
+            {"$push": {"preferenze": fn_args.get("nota_testuale")}}
+        )
+        res_text = "✅ Nota salvata."
+        messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Nota utente salvata in memoria episodica."})
+        
     else:
         res_text = "Errore: Tool sconosciuto."
         messages.append({"role": "system", "content": f"Azione '{fn_name}' fallita: Tool sconosciuto."})

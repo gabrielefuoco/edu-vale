@@ -7,6 +7,7 @@ class User(BaseModel):
     indirizzo: Optional[str] = None
     ore_settimanali: int = 0
     note: Optional[str] = None
+    preferenze: List[str] = []
 
 class UserInDB(User):
     id: str = Field(alias="_id")
@@ -49,6 +50,7 @@ class ToolCreaUtente(BaseModel):
     nome: str
     ore_settimanali: float = 0
     note: Optional[str] = ""
+    preferenze: List[str] = []
 
 class ToolCercaUtenti(BaseModel):
     query: str
@@ -72,3 +74,7 @@ class ToolModificaUtente(BaseModel):
 
 class ToolRichiediChiarimentoUtente(BaseModel):
     domanda_da_porre: str
+
+class ToolSalvaNotaUtente(BaseModel):
+    nome_utente: str
+    nota_testuale: str

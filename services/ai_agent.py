@@ -146,8 +146,24 @@ TOOLS = [
                 "required": ["domanda_da_porre"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "salva_nota_utente",
+            "description": "Salva una preferenza qualitativa o un'informazione utile nel profilo di un utente. Usa questo tool per creare una 'memoria episodica' quando l'educatore menziona dettagli importanti.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nome_utente": {"type": "string", "description": "Il nome dell'utente"},
+                    "nota_testuale": {"type": "string", "description": "L'informazione qualitativa da ricordare (es. 'Odia i rumori forti', 'La madre vuole messaggi solo su WhatsApp')"}
+                },
+                "required": ["nome_utente", "nota_testuale"]
+            }
+        }
     }
 ]
+
 
 async def chat_with_agent(messages: list[dict]) -> tuple[ChatMessage, list[ToolCall]]:
     formatted_messages = []
