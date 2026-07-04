@@ -1,14 +1,36 @@
 import json
+import io
+import csv
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from typing import List
+
+from pydantic import ValidationError
+from database.models import (
+    ToolRegistraSessione, ToolPianificaSessione, ToolCreaUtente, 
+    ToolCercaUtenti, ToolLeggiStoricoSessioni, ToolLeggiAgenda, 
+    ToolEliminaSessionePianificata, ToolModificaUtente, ToolRichiediChiarimentoUtente
+)
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
-from services.ai_agent import chat_with_agent, summarize_context
+
 from database.connection import get_collection
+from services.ai_agent import chat_with_agent, summarize_context
 from services.sheets_service import append_session_to_sheet
 
-from services.sheets_service import append_session_to_sheet
+TOOL_MODELS = {
+    "registra_sessione": ToolRegistraSessione,
+    "pianifica_sessione": ToolPianificaSessione,
+    "crea_utente": ToolCreaUtente,
+    "cerca_utenti": ToolCercaUtenti,
+    "leggi_storico_sessioni": ToolLeggiStoricoSessioni,
+    "leggi_agenda": ToolLeggiAgenda,
+    "elimina_sessione_pianificata": ToolEliminaSessionePianificata,
+    "modifica_utente": ToolModificaUtente,
+    "richiedi_chiarimento_utente": ToolRichiediChiarimentoUtente
+}
 
 def format_tool_args(args: dict) -> str:
     return "\n".join([f"• **{k}**: {v}" for k, v in args.items()])
@@ -21,18 +43,26 @@ async def get_system_prompt() -> dict:
     utenti = await col.find().to_list(length=100)
     utenti_str = ", ".join([u.get('nome') for u in utenti]) if utenti else "Nessuno"
     
+    col_prog = await get_collection("programmazione")
+    agenda_oggi = await col_prog.find({"Data": oggi}).sort("Ora Inizio", 1).to_list(length=50)
+    if agenda_oggi:
+        agenda_str = "\n".join([f"- {a.get('Ora Inizio')}-{a.get('Ora Fine')} : {a.get('Utente')} ({a.get('Luogo', 'N/D')})" for a in agenda_oggi])
+    else:
+        agenda_str = "Nessun appuntamento in agenda per oggi."
+        
     return {
         "role": "system",
         "content": (
-            f"Sei l'assistente IA operativo di un'educatrice. Oggi è {oggi}. "
-            f"Gli utenti attualmente in carico sono: {utenti_str}. "
+            f"Sei l'assistente IA operativo di un'educatrice. Oggi è {oggi}.\n"
+            f"Gli utenti attualmente in carico sono: {utenti_str}.\n"
+            f"📍 LA TUA AGENDA DI OGGI:\n{agenda_str}\n\n"
             "Il tuo scopo è estrarre dati strutturati per eseguire i Tool a tua disposizione "
-            "(registra_sessione, pianifica_sessione, crea_utente, cerca_utenti, leggi_storico_sessioni, leggi_agenda, elimina_sessione_pianificata, modifica_utente). "
+            "(registra_sessione, pianifica_sessione, crea_utente, cerca_utenti, leggi_storico_sessioni, leggi_agenda, elimina_sessione_pianificata, modifica_utente, richiedi_chiarimento_utente). "
             "REGOLE DI COMPORTAMENTO (AGENTE RE-ACT):\n"
             "1. RAGIONAMENTO E VERIFICA: Valuta sempre se hai tutti i dati prima di agire. Se un nome è ambiguo, usa 'cerca_utenti'. PRIMA di eliminare o modificare appuntamenti in blocco, DEVI TASSATIVAMENTE usare 'leggi_agenda' per verificare cosa esiste realmente. Non tirare a indovinare date o nomi se non sei sicuro che esistano.\n"
             "2. MULTI-TOOL: Puoi chiamare più tool contemporaneamente (es. registrare 3 sessioni diverse in un solo colpo).\n"
-            "3. NO ALLUCINAZIONI: Se mancano parametri obbligatori e non puoi dedurli dal contesto o dai read-tools, chiedili all'utente in modo diretto e secco, senza inventare nulla.\n"
-            "4. STILE: Mantieni un tono essenziale, professionale e oggettivo. Niente consigli, niente convenevoli, niente esclamazioni emotive."
+            "3. DOMANDE ESPLICITE: Se mancano parametri obbligatori e non puoi dedurli dal contesto o dai read-tools, USA IL TOOL 'richiedi_chiarimento_utente'. Non chiedere cose scrivendo testo libero.\n"
+            "4. STILE: Mantieni un tono essenziale, professionale e oggettivo. Niente consigli, niente convenevoli."
         )
     }
 
@@ -99,9 +129,31 @@ async def chat_handler(message: Message, state: FSMContext):
         
         for tc in tool_calls:
             fn_name = tc.function.name
-            fn_args = json.loads(tc.function.arguments)
-            
-            if fn_name == "cerca_utenti":
+            try:
+                fn_args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                fn_args = {}
+                
+            # Self-Reflection (Validazione Pydantic)
+            model_cls = TOOL_MODELS.get(fn_name)
+            if model_cls:
+                try:
+                    # Validiamo e dumpo gestendo gli alias (es. "Attività svolte")
+                    fn_args = model_cls(**fn_args).model_dump(by_alias=True)
+                except ValidationError as e:
+                    error_msg = str(e).replace('\n', ' ')
+                    messages.append({"role": "tool", "name": fn_name, "content": f"Errore di validazione Pydantic: {error_msg}. Correggi la tua chiamata.", "tool_call_id": tc.id})
+                    has_read_tools = True
+                    continue # Continua il ciclo while per permettere a Mistral di auto-correggersi
+                
+            if fn_name == "richiedi_chiarimento_utente":
+                domanda = fn_args.get("domanda_da_porre", "Puoi chiarire?")
+                messages.append({"role": "tool", "name": fn_name, "content": "Domanda inviata all'utente. In attesa di risposta testuale.", "tool_call_id": tc.id})
+                await state.update_data(messages=messages, pending_tools_queue=[]) # Scartiamo eventuali write tools in coda per non incartare lo stato
+                await message.answer(f"❓ {domanda}")
+                return # Interrompiamo il loop agentico e mettiamoci in ascolto
+                
+            elif fn_name == "cerca_utenti":
                 has_read_tools = True
                 query = fn_args.get("query", "")
                 col = await get_collection("utenti")

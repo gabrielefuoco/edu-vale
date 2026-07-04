@@ -29,3 +29,46 @@ class ChatSession(BaseModel):
     user_id: int
     contesto: List[dict] = []
     ultimo_aggiornamento: datetime = Field(default_factory=datetime.utcnow)
+
+# --- Tool Validation Models ---
+class ToolRegistraSessione(BaseModel):
+    Giorno: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    Ore: float
+    Utente: str
+    Luogo: Optional[str] = None
+    Attività_svolte: str = Field(alias="Attività svolte") # alias per lo spazio
+    
+class ToolPianificaSessione(BaseModel):
+    Data: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    Ora_Inizio: str = Field(alias="Ora Inizio", pattern=r"^\d{2}:\d{2}$")
+    Ora_Fine: str = Field(alias="Ora Fine", pattern=r"^\d{2}:\d{2}$")
+    Utente: str
+    Luogo: Optional[str] = None
+
+class ToolCreaUtente(BaseModel):
+    nome: str
+    ore_settimanali: float = 0
+    note: Optional[str] = ""
+
+class ToolCercaUtenti(BaseModel):
+    query: str
+
+class ToolLeggiStoricoSessioni(BaseModel):
+    utente: str
+    limite: int = 5
+
+class ToolLeggiAgenda(BaseModel):
+    data_inizio: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    data_fine: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+class ToolEliminaSessionePianificata(BaseModel):
+    Data: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    Utente: str
+
+class ToolModificaUtente(BaseModel):
+    nome_utente: str
+    ore_settimanali: Optional[float] = None
+    note: Optional[str] = None
+
+class ToolRichiediChiarimentoUtente(BaseModel):
+    domanda_da_porre: str

@@ -132,6 +132,20 @@ TOOLS = [
                 "required": ["nome_utente"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "richiedi_chiarimento_utente",
+            "description": "Se ti mancano dati obbligatori, usa questo tool per fermarti e fare una domanda diretta all'utente. Non inventare mai i dati.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "domanda_da_porre": {"type": "string", "description": "La domanda esatta da inviare all'utente su Telegram"}
+                },
+                "required": ["domanda_da_porre"]
+            }
+        }
     }
 ]
 
