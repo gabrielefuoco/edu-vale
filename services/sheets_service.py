@@ -2,6 +2,7 @@ import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
@@ -14,10 +15,12 @@ def get_spreadsheet():
     client = gspread.authorize(creds)
     return client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
 
-def append_session_to_sheet(data: dict):
+import asyncio
+
+def _sync_append_session_to_sheet(data: dict):
     spreadsheet = get_spreadsheet()
     if not spreadsheet:
-        return
+        return False, "Impossibile accedere al foglio Google. Controlla le credenziali o l'URL."
     
     date_str = data.get("Giorno", "")
     sheet_name = None
@@ -33,7 +36,7 @@ def append_session_to_sheet(data: dict):
         pass
         
     if not sheet_name:
-        now = datetime.now()
+        now = datetime.now(ZoneInfo("Europe/Rome"))
         sheet_name = f"{MESI[now.month-1]} {now.year}"
 
     try:
@@ -52,3 +55,11 @@ def append_session_to_sheet(data: dict):
         data.get("Luogo", ""), 
         data.get("Attività svolte", "")
     ])
+    return True, "Sessione registrata nel DB e nel Foglio Google."
+
+async def append_session_to_sheet(data: dict):
+    try:
+        success, message = await asyncio.to_thread(_sync_append_session_to_sheet, data)
+        return success, message
+    except Exception as e:
+        return False, f"Errore salvataggio Google Sheets: {str(e)}"

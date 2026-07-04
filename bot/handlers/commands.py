@@ -14,15 +14,16 @@ async def cmd_start(message: Message):
 @router.message(Command("aiuto"))
 async def cmd_aiuto(message: Message):
     help_text = """
-/oggi - Agenda della giornata
-/registra - Registra un nuovo diario/sessione
-/foglio - Link al file Google Sheets
-/reset - Pulisce la memoria della chat
-/annulla - Annulla operazione corrente
-/nuovo_utente - Aggiunge un utente
-/utenti - Mostra lista utenti
-/progressi [nome] - Riassunto dei progressi
-/esporta - Esporta db
+Ecco i comandi rapidi a tua disposizione:
+
+/oggi - 📅 Mostra l'agenda della giornata
+/utenti - 👥 Mostra la lista degli utenti in carico
+/foglio - 📊 Link al file Google Sheets
+/esporta - 💾 Esporta tutto il database in CSV
+/reset - 🧹 Pulisce la memoria e riavvia l'agente
+/aiuto - ℹ️ Mostra questo messaggio
+
+_💡 Suggerimento: Per tutto il resto (creare utenti, registrare sessioni, annullare appuntamenti, ecc.), parla direttamente con me inviandomi un vocale o un messaggio di testo!_
     """
     await message.answer(help_text)
 
@@ -32,10 +33,11 @@ async def cmd_foglio(message: Message):
     await message.answer(f"Ecco il link al tuo registro: {url}")
 
 @router.message(Command("reset"))
-async def cmd_reset(message: Message):
+async def cmd_reset(message: Message, state: FSMContext):
+    await state.clear()
     col = await get_collection("chat_sessions")
     await col.delete_one({"user_id": message.from_user.id})
-    await message.answer("Memoria chat resettata.")
+    await message.answer("Memoria chat svuotata. L'agente è ripartito da zero.")
 
 @router.message(Command("annulla"))
 async def cmd_annulla(message: Message, state: FSMContext):
@@ -50,6 +52,7 @@ async def cmd_utenti(message: Message):
     await message.answer(f"Utenti attivi:\n{msg}")
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from aiogram.types import FSInputFile
 from services.export_service import export_sessions_to_csv
 from services.calendar_service import generate_ics_file
@@ -72,7 +75,7 @@ async def cmd_esporta(message: Message, state: FSMContext):
 
 @router.message(Command("oggi"))
 async def cmd_oggi(message: Message, state: FSMContext):
-    oggi = datetime.now().strftime("%Y-%m-%d")
+    oggi = datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
     col = await get_collection("programmazione")
     # Finding sessions where "Data" matches today
     sessioni = await col.find({"Data": oggi}).to_list(length=20)

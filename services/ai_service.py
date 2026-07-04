@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from groq import AsyncGroq
 from mistralai.async_client import MistralAsyncClient
 from mistralai.models.chat_completion import ChatMessage
@@ -33,7 +34,7 @@ async def extract_session_data(text: str) -> dict:
 
 async def extract_schedule_data(text: str) -> dict:
     prompt = (
-        f"Analizza il testo seguente per estrarre i dati di pianificazione. Usa la data odierna come base: {datetime.now().strftime('%Y-%m-%d')}. "
+        f"Analizza il testo seguente per estrarre i dati di pianificazione. Usa la data odierna come base: {datetime.now(ZoneInfo('Europe/Rome')).strftime('%Y-%m-%d')}. "
         "Restituisci RIGOROSAMENTE E SOLO un oggetto JSON valido con: "
         "\"Data\" (YYYY-MM-DD), \"Ora Inizio\" (HH:MM), \"Ora Fine\" (HH:MM), "
         "\"Utente\" (nome), \"Luogo\" (stringa o null se assente). "

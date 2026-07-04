@@ -51,10 +51,12 @@ async def main():
     
     # Setup Telegram Menu Commands
     commands_list = [
-        BotCommand(command="nuovo_utente", description="Crea un nuovo utente"),
-        BotCommand(command="elimina_utente", description="Elimina un utente"),
-        BotCommand(command="oggi", description="Mostra le sessioni di oggi"),
-        BotCommand(command="esporta", description="Esporta i dati in CSV")
+        BotCommand(command="aiuto", description="Mostra la lista dei comandi"),
+        BotCommand(command="oggi", description="Mostra l'agenda di oggi"),
+        BotCommand(command="utenti", description="Mostra gli utenti in carico"),
+        BotCommand(command="foglio", description="Link al file Google Sheets"),
+        BotCommand(command="esporta", description="Esporta i dati in CSV"),
+        BotCommand(command="reset", description="Pulisce la memoria e riavvia l'agente")
     ]
     await bot.set_my_commands(commands_list)
     
