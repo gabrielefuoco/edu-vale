@@ -29,7 +29,7 @@ async def get_system_prompt() -> dict:
             "Il tuo scopo è estrarre dati strutturati per eseguire i Tool a tua disposizione "
             "(registra_sessione, pianifica_sessione, crea_utente, cerca_utenti, leggi_storico_sessioni, leggi_agenda, elimina_sessione_pianificata, modifica_utente). "
             "REGOLE DI COMPORTAMENTO (AGENTE RE-ACT):\n"
-            "1. RAGIONAMENTO: Valuta sempre se hai tutti i dati prima di agire. Se un nome è ambiguo (es. solo 'Mario'), DEVI prima usare 'cerca_utenti' per trovare il cognome esatto.\n"
+            "1. RAGIONAMENTO E VERIFICA: Valuta sempre se hai tutti i dati prima di agire. Se un nome è ambiguo, usa 'cerca_utenti'. PRIMA di eliminare o modificare appuntamenti in blocco, DEVI TASSATIVAMENTE usare 'leggi_agenda' per verificare cosa esiste realmente. Non tirare a indovinare date o nomi se non sei sicuro che esistano.\n"
             "2. MULTI-TOOL: Puoi chiamare più tool contemporaneamente (es. registrare 3 sessioni diverse in un solo colpo).\n"
             "3. NO ALLUCINAZIONI: Se mancano parametri obbligatori e non puoi dedurli dal contesto o dai read-tools, chiedili all'utente in modo diretto e secco, senza inventare nulla.\n"
             "4. STILE: Mantieni un tono essenziale, professionale e oggettivo. Niente consigli, niente convenevoli, niente esclamazioni emotive."
@@ -199,33 +199,38 @@ async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):
             
             icona = "✅" if success else "⚠️"
             res_text += f"- Sessione registrata: {fn_args.get('Utente')} ({fn_args.get('Ore')}h). {msg}\n"
-            messages.append({"role": "tool", "name": fn_name, "content": f"Sessione registrata. Sheets: {msg}", "tool_call_id": tool["id"]})
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione registrata. Sheets: {msg}"})
             
         elif fn_name == "pianifica_sessione":
             col = await get_collection("programmazione")
             await col.insert_one(fn_args)
             res_text += f"- Sessione pianificata: {fn_args.get('Utente')} il {fn_args.get('Data')}\n"
-            messages.append({"role": "tool", "name": fn_name, "content": "Sessione pianificata con successo", "tool_call_id": tool["id"]})
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione pianificata con successo."})
             
         elif fn_name == "crea_utente":
             col = await get_collection("utenti")
-            await col.insert_one({
-                "nome": fn_args.get("nome"),
-                "ore_settimanali": fn_args.get("ore_settimanali", 0),
-                "note": fn_args.get("note", "")
-            })
-            res_text += f"- Utente creato: {fn_args.get('nome')}\n"
-            messages.append({"role": "tool", "name": fn_name, "content": "Utente creato con successo", "tool_call_id": tool["id"]})
+            existing = await col.find_one({"nome": {"$regex": f"^{fn_args.get('nome')}$", "$options": "i"}})
+            if not existing:
+                await col.insert_one({
+                    "nome": fn_args.get("nome"),
+                    "ore_settimanali": fn_args.get("ore_settimanali", 0),
+                    "note": fn_args.get("note", "")
+                })
+                res_text += f"- Utente creato: {fn_args.get('nome')}\n"
+                messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente creato con successo."})
+            else:
+                res_text += f"- Creazione ignorata: {fn_args.get('nome')} esiste già.\n"
+                messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: L'utente esisteva già."})
             
         elif fn_name == "elimina_sessione_pianificata":
             col = await get_collection("programmazione")
             result = await col.delete_one({"Data": fn_args.get("Data"), "Utente": {"$regex": fn_args.get("Utente", ""), "$options": "i"}})
             if result.deleted_count > 0:
                 res_text += f"- Sessione annullata: {fn_args.get('Utente')} il {fn_args.get('Data')}\n"
-                messages.append({"role": "tool", "name": fn_name, "content": "Sessione annullata con successo", "tool_call_id": tool["id"]})
+                messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione annullata con successo."})
             else:
                 res_text += f"- Impossibile annullare: nessuna sessione trovata per {fn_args.get('Utente')} il {fn_args.get('Data')}\n"
-                messages.append({"role": "tool", "name": fn_name, "content": "Nessuna sessione trovata da annullare.", "tool_call_id": tool["id"]})
+                messages.append({"role": "system", "content": f"Azione '{fn_name}' fallita: Nessuna sessione trovata da annullare."})
                 
         elif fn_name == "modifica_utente":
             col = await get_collection("utenti")
@@ -238,10 +243,10 @@ async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):
             if update_data:
                 await col.update_one({"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}}, {"$set": update_data})
                 res_text += f"- Utente aggiornato: {fn_args.get('nome_utente')}\n"
-                messages.append({"role": "tool", "name": fn_name, "content": "Utente aggiornato con successo", "tool_call_id": tool["id"]})
+                messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente aggiornato con successo."})
             else:
                 res_text += f"- Nessuna modifica specificata per {fn_args.get('nome_utente')}\n"
-                messages.append({"role": "tool", "name": fn_name, "content": "Nessuna modifica effettuata.", "tool_call_id": tool["id"]})
+                messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: Nessuna modifica specificata."})
             
     await state.update_data(pending_tools_queue=[], messages=messages)
     try:
@@ -310,29 +315,39 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
         await col.insert_one({"parsed": fn_args, "timestamp": datetime.now(ZoneInfo("Europe/Rome"))})
         
         icona = "✅" if success else "⚠️"
-        res_text = f"{icona} {msg}"
+        res_text = f"✅ Sessione registrata: {fn_args.get('Utente')}. {msg}"
+        messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione registrata. Sheets: {msg}"})
         
     elif fn_name == "pianifica_sessione":
         col = await get_collection("programmazione")
         await col.insert_one(fn_args)
-        res_text = "✅ Sessione pianificata in agenda."
+        res_text = "✅ Sessione pianificata."
+        messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione pianificata con successo."})
         
     elif fn_name == "crea_utente":
         col = await get_collection("utenti")
-        await col.insert_one({
-            "nome": fn_args.get("nome"),
-            "ore_settimanali": fn_args.get("ore_settimanali", 0),
-            "note": fn_args.get("note", "")
-        })
-        res_text = "✅ Utente creato."
+        existing = await col.find_one({"nome": {"$regex": f"^{fn_args.get('nome')}$", "$options": "i"}})
+        if not existing:
+            await col.insert_one({
+                "nome": fn_args.get("nome"),
+                "ore_settimanali": fn_args.get("ore_settimanali", 0),
+                "note": fn_args.get("note", "")
+            })
+            res_text = "✅ Utente creato."
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente creato con successo."})
+        else:
+            res_text = "⚠️ Utente già esistente."
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: L'utente esisteva già."})
         
     elif fn_name == "elimina_sessione_pianificata":
         col = await get_collection("programmazione")
         result = await col.delete_one({"Data": fn_args.get("Data"), "Utente": {"$regex": fn_args.get("Utente", ""), "$options": "i"}})
         if result.deleted_count > 0:
             res_text = "✅ Sessione annullata."
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione annullata con successo."})
         else:
             res_text = "⚠️ Impossibile annullare: sessione non trovata."
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' fallita: Nessuna sessione trovata da annullare."})
             
     elif fn_name == "modifica_utente":
         col = await get_collection("utenti")
@@ -345,13 +360,14 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
         if update_data:
             await col.update_one({"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}}, {"$set": update_data})
             res_text = "✅ Utente aggiornato."
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente aggiornato con successo."})
         else:
             res_text = "⚠️ Nessun campo da aggiornare."
+            messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: Nessuna modifica specificata."})
             
     else:
         res_text = "Errore: Tool sconosciuto."
-        
-    messages.append({"role": "tool", "name": fn_name, "content": "Eseguita con successo.", "tool_call_id": fn_id})
+        messages.append({"role": "system", "content": f"Azione '{fn_name}' fallita: Tool sconosciuto."})
     
     queue = data.get("pending_tools_queue", [])
     if queue:
@@ -392,10 +408,11 @@ async def cancel_tool_call(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     messages = data.get("messages", [])
     fn_name = data.get("pending_tool")
-    fn_id = data.get("pending_tool_id", "dummy")
     
-    messages.append({"role": "tool", "name": fn_name, "content": "L'utente ha annullato questa azione.", "tool_call_id": fn_id})
+    # Aggiorna i messaggi per informare Mistral dell'annullamento
+    messages.append({"role": "system", "content": f"L'utente ha annullato l'azione '{fn_name}'."})
     
+    # Rimuoviamo il tool dalla coda in attesa
     queue = data.get("pending_tools_queue", [])
     if queue:
         next_tool = queue.pop(0)
