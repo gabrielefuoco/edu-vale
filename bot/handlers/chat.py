@@ -1,6 +1,8 @@
 import json
 import io
 import csv
+import re
+import csv
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import List
@@ -34,6 +36,22 @@ TOOL_MODELS = {
     "salva_nota_utente": ToolSalvaNotaUtente
 }
 
+def format_for_telegram(text: str) -> str:
+    """Converte la sintassi Markdown di base nell'HTML di Telegram."""
+    # Sostituisce **testo** con <b>testo</b>
+    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+    # Sostituisce _testo_ con <i>testo</i> (opzionale)
+    text = re.sub(r'_(.*?)_', r'<i>\1</i>', text)
+    
+    # Assicurati di sfuggire i caratteri speciali HTML <, >, & se Mistral li genera
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    
+    # Ripristina i tag HTML che abbiamo appena sfuggito
+    text = text.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
+    text = text.replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
+    
+    return text
+
 def format_tool_args(args: dict) -> str:
     return "\n".join([f"• **{k}**: {v}" for k, v in args.items()])
 
@@ -64,7 +82,8 @@ async def get_system_prompt() -> dict:
             "1. RAGIONAMENTO E VERIFICA: Valuta sempre se hai tutti i dati prima di agire. Se un nome è ambiguo, usa 'cerca_utenti'. PRIMA di eliminare o modificare appuntamenti in blocco, DEVI TASSATIVAMENTE usare 'leggi_agenda' per verificare cosa esiste realmente. Non tirare a indovinare date o nomi se non sei sicuro che esistano.\n"
             "2. MULTI-TOOL: Puoi chiamare più tool contemporaneamente (es. registrare 3 sessioni diverse in un solo colpo).\n"
             "3. DOMANDE ESPLICITE: Se mancano parametri obbligatori e non puoi dedurli dal contesto o dai read-tools, USA IL TOOL 'richiedi_chiarimento_utente'. Non chiedere cose scrivendo testo libero.\n"
-            "4. STILE: Mantieni un tono essenziale, professionale e oggettivo. Niente consigli, niente convenevoli."
+            "4. STILE: Mantieni un tono essenziale, professionale e oggettivo. Niente consigli, niente convenevoli.\n"
+            "5. FORMATTAZIONE: Non usare MAI il Markdown (come gli asterischi **). Se devi evidenziare qualcosa in grassetto, usa esclusivamente i tag HTML <b>testo</b>."
         )
     }
 
@@ -95,7 +114,7 @@ async def chat_handler(message: Message, state: FSMContext):
         transcribed_text = await transcribe_audio(file_path)
         os.remove(file_path)
         
-        await message.answer(f"🎙️ **Trascrizione (Groq Whisper):**\n_{transcribed_text}_", parse_mode="Markdown")
+        await message.answer(f"🎙️ <b>Trascrizione (Groq Whisper):</b>\n<i>{transcribed_text}</i>", parse_mode="HTML")
         user_input = transcribed_text
     else:
         user_input = message.text
@@ -116,10 +135,12 @@ async def chat_handler(message: Message, state: FSMContext):
             # End of agentic loop, no more tools
             messages.append({"role": "assistant", "content": bot_msg.content})
             await state.update_data(messages=messages)
-            try:
-                await message.answer(bot_msg.content, parse_mode="Markdown")
-            except Exception:
-                await message.answer(bot_msg.content)
+            if bot_msg.content:
+                testo_pulito = format_for_telegram(bot_msg.content)
+                try:
+                    await message.answer(testo_pulito, parse_mode="HTML")
+                except Exception as e:
+                    await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
             return
             
         # We have tool calls
@@ -226,17 +247,14 @@ async def chat_handler(message: Message, state: FSMContext):
         
         testo_azioni = "L'agente vuole eseguire le seguenti azioni:\n\n"
         for i, pt in enumerate(pending_write_tools, 1):
-            testo_azioni += f"{i}. **{pt['name']}**\n"
+            testo_azioni += f"{i}. <b>{pt['name']}</b>\n"
             for k, v in pt['args'].items():
                 testo_azioni += f"   - {k}: {v}\n"
             testo_azioni += "\n"
             
         testo_azioni += "Cosa vuoi fare?"
         
-        try:
-            await message.answer(testo_azioni, reply_markup=markup, parse_mode="Markdown")
-        except Exception:
-            await message.answer(testo_azioni.replace("**", ""), reply_markup=markup)
+        await message.answer(format_for_telegram(testo_azioni), reply_markup=markup, parse_mode="HTML")
         return
 
 @router.callback_query(F.data == "confirm_all")
@@ -248,7 +266,7 @@ async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):
     if not queue:
         return await callback.message.edit_text("Nessuna azione in coda.")
         
-    res_text = "✅ **Risultati esecuzione in blocco:**\n\n"
+    res_text = "✅ <b>Risultati esecuzione in blocco:</b>\n\n"
     
     for tool in queue:
         fn_name = tool["name"]
@@ -321,10 +339,7 @@ async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):
             messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Nota utente salvata in memoria episodica."})
             
     await state.update_data(pending_tools_queue=[], messages=messages)
-    try:
-        await callback.message.edit_text(res_text, parse_mode="Markdown")
-    except Exception:
-        await callback.message.edit_text(res_text.replace("**", ""))
+    await callback.message.edit_text(format_for_telegram(res_text), parse_mode="HTML")
 
 @router.callback_query(F.data == "confirm_single")
 async def start_single_confirmation(callback: CallbackQuery, state: FSMContext):
@@ -350,17 +365,11 @@ async def start_single_confirmation(callback: CallbackQuery, state: FSMContext):
     queue_msg = f" (1 di {len(queue) + 1})"
     formatted_args = format_tool_args(first_tool['args'])
     
-    try:
-        await callback.message.edit_text(
-            f"Azione in sospeso {queue_msg}:\n**{first_tool['name']}**\n\n{formatted_args}\n\nConfermi?",
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-    except Exception:
-        await callback.message.edit_text(
-            f"Azione in sospeso {queue_msg}:\n{first_tool['name']}\n\n{formatted_args}\n\nConfermi?",
-            reply_markup=markup
-        )
+    await callback.message.edit_text(
+        format_for_telegram(f"Azione in sospeso {queue_msg}:\n<b>{first_tool['name']}</b>\n\n{formatted_args}\n\nConfermi?"),
+        reply_markup=markup,
+        parse_mode="HTML"
+    )
 
 @router.callback_query(F.data == "cancel_all")
 async def cancel_all_tools(callback: CallbackQuery, state: FSMContext):
@@ -470,20 +479,14 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
         queue_msg = f" (rimanenti in coda: {len(queue)})" if queue else " (ultimo in coda)"
         formatted_args = format_tool_args(next_tool['args'])
         
-        try:
-            await callback.message.edit_text(
-                f"{res_text}\n\nAzione successiva:\n**{next_tool['name']}**{queue_msg}\n\n{formatted_args}\n\nConfermi?", 
-                reply_markup=markup,
-                parse_mode="Markdown"
-            )
-        except Exception:
-            await callback.message.edit_text(
-                f"{res_text}\n\nAzione successiva:\n{next_tool['name']}{queue_msg}\n\n{formatted_args}\n\nConfermi?", 
-                reply_markup=markup
-            )
+        await callback.message.edit_text(
+            format_for_telegram(f"{res_text}\n\nAzione successiva:\n<b>{next_tool['name']}</b>{queue_msg}\n\n{formatted_args}\n\nConfermi?"), 
+            reply_markup=markup,
+            parse_mode="HTML"
+        )
     else:
         await state.update_data(messages=messages, pending_tool=None, pending_args=None, pending_tool_id=None, pending_tools_queue=[])
-        await callback.message.edit_text(f"{res_text}\n\n✅ Tutte le azioni richieste sono state completate.")
+        await callback.message.edit_text(format_for_telegram(f"{res_text}\n\n✅ Tutte le azioni richieste sono state completate."), parse_mode="HTML")
 
 @router.callback_query(F.data == "cancel_tool")
 async def cancel_tool_call(callback: CallbackQuery, state: FSMContext):
@@ -514,17 +517,11 @@ async def cancel_tool_call(callback: CallbackQuery, state: FSMContext):
         queue_msg = f" (rimanenti in coda: {len(queue)})" if queue else " (ultimo in coda)"
         formatted_args = format_tool_args(next_tool['args'])
         
-        try:
-            await callback.message.edit_text(
-                f"❌ Azione '{fn_name}' annullata.\n\nAzione successiva:\n**{next_tool['name']}**{queue_msg}\n\n{formatted_args}\n\nConfermi?", 
-                reply_markup=markup,
-                parse_mode="Markdown"
-            )
-        except Exception:
-            await callback.message.edit_text(
-                f"❌ Azione '{fn_name}' annullata.\n\nAzione successiva:\n{next_tool['name']}{queue_msg}\n\n{formatted_args}\n\nConfermi?", 
-                reply_markup=markup
-            )
+        await callback.message.edit_text(
+            format_for_telegram(f"❌ Azione '{fn_name}' annullata.\n\nAzione successiva:\n<b>{next_tool['name']}</b>{queue_msg}\n\n{formatted_args}\n\nConfermi?"), 
+            reply_markup=markup,
+            parse_mode="HTML"
+        )
     else:
         await state.update_data(messages=messages, pending_tool=None, pending_args=None, pending_tool_id=None, pending_tools_queue=[])
-        await callback.message.edit_text(f"❌ Azione '{fn_name}' annullata.\n\nCode svuotata.")
+        await callback.message.edit_text(format_for_telegram(f"❌ Azione '{fn_name}' annullata.\n\nCoda svuotata."), parse_mode="HTML")
