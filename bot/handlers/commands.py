@@ -63,12 +63,19 @@ async def run_setup(bot, chat_id: int, user_id: str):
             parse_mode="Markdown"
         )
         
-        # Prova a nascondere e chiudere il topic Generale (potrebbe fallire se Telegram non lo permette in certi casi)
+        # Personalizza il gruppo: nome, descrizione, foto e ridenominazione del topic Generale in "Log"
         try:
-            await bot.close_general_forum_topic(chat_id=chat_id)
-            await bot.hide_general_forum_topic(chat_id=chat_id)
+            await bot.set_chat_title(chat_id=chat_id, title="EduAgent")
+            await bot.set_chat_description(chat_id=chat_id, description="Spazio di lavoro automatizzato gestito da EduAgent.")
+            
+            from aiogram.types import FSInputFile
+            if os.path.exists("logo.png"):
+                photo = FSInputFile("logo.png")
+                await bot.set_chat_photo(chat_id=chat_id, photo=photo)
+                
+            await bot.edit_general_forum_topic(chat_id=chat_id, name="Log")
         except Exception as ex:
-            logger.warning(f"Impossibile nascondere il topic Generale: {ex}")
+            logger.warning(f"Impossibile personalizzare il gruppo (potrebbero mancare i permessi): {ex}")
             
         # Aggiorna il registry in memoria
         if "segretario" in AGENT_REGISTRY:
