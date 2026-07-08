@@ -1,9 +1,12 @@
 import asyncio
+import os
+from dotenv import load_dotenv
 from telethon.sync import TelegramClient
 from telethon.sessions import StringSession
 
-api_id = 6
-api_hash = 'eb06d4abfb49dc3eeb1aeb98ae0f581e'
+load_dotenv()
+api_id = int(os.getenv("TELEGRAM_API_ID"))
+api_hash = os.getenv("TELEGRAM_API_HASH")
 
 async def main():
     print("Premi INVIO e inserisci il tuo numero di telefono quando richiesto (es. +39334...).")

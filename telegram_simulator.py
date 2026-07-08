@@ -1,10 +1,13 @@
 import asyncio
+import os
 import sys
+from dotenv import load_dotenv
 from telethon import TelegramClient
 
-api_id = 6
-api_hash = 'eb06d4abfb49dc3eeb1aeb98ae0f581e'
-phone_number = '+393347078649'
+load_dotenv()
+api_id = int(os.getenv("TELEGRAM_API_ID"))
+api_hash = os.getenv("TELEGRAM_API_HASH")
+phone_number = os.getenv("TELEGRAM_PHONE_NUMBER")
 bot_username = 'edu_agent_valetta_bot'
 
 async def main():

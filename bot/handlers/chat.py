@@ -90,7 +90,9 @@ async def get_system_prompt() -> dict:
             "4. STILE: Mantieni un tono essenziale, professionale e oggettivo. Niente consigli, niente convenevoli.\n"
             "5. FORMATTAZIONE: Non usare MAI il Markdown. Niente asterischi **, niente trattini bassi __, niente cancelletti #, niente tabelle con | e -. "
             "Per il grassetto usa ESCLUSIVAMENTE i tag HTML <b>testo</b>. Per il corsivo usa <i>testo</i>. "
-            "Per le liste usa trattini semplici preceduti da una riga vuota, non tabelle."
+            "Per le liste usa trattini semplici preceduti da una riga vuota, non tabelle.\n"
+            "6. MESSAGGI MULTIPLI: Se devi comunicare cose distinte (es. un aggiornamento intermedio e poi un riepilogo), "
+            "separa i messaggi con il marcatore esatto '---MSG---' su una riga da sola. Ogni parte verrà inviata come messaggio separato."
         )
     }
 
@@ -126,9 +128,12 @@ async def chat_handler(message: Message, state: FSMContext):
             
             from services.ai_service import transcribe_audio
             import os
-            transcribed_text = await transcribe_audio(file_path)
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            try:
+                transcribed_text = await transcribe_audio(file_path)
+            finally:
+                # Garantisce la pulizia del file anche in caso di eccezione Groq
+                if os.path.exists(file_path):
+                    os.remove(file_path)
             
             await message.answer(f"🎙️ <b>Trascrizione (Groq Whisper):</b>\n<i>{transcribed_text}</i>", parse_mode="HTML")
             user_input = transcribed_text
@@ -146,9 +151,10 @@ async def chat_handler(message: Message, state: FSMContext):
         messages.append({"role": "user", "content": user_input})
         await message.bot.send_chat_action(message.chat.id, "typing")
         
-        MAX_LOOP = 5
+        MAX_LOOP = 10
         loop_count = 0
         pending_write_tools = []
+        consecutive_pydantic_errors = 0  # contatore errori Pydantic consecutivi
 
     
         while loop_count < MAX_LOOP:
@@ -160,23 +166,36 @@ async def chat_handler(message: Message, state: FSMContext):
                 messages.append({"role": "assistant", "content": bot_msg.content})
                 await state.update_data(messages=messages)
                 if bot_msg.content:
-                    testo_pulito = format_for_telegram(bot_msg.content)
-                    try:
-                        await message.answer(testo_pulito, parse_mode="HTML")
-                    except Exception as e:
-                        await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
-                    # Log risposta finale bot (completa)
+                    # Supporto multi-messaggio via separatore ---MSG---
+                    parti = [p.strip() for p in bot_msg.content.split("---MSG---") if p.strip()]
+                    for parte in parti:
+                        testo_pulito = format_for_telegram(parte)
+                        try:
+                            await message.answer(testo_pulito, parse_mode="HTML")
+                        except Exception:
+                            await message.answer(parte.replace("**", "").replace("<", "").replace(">", ""))
                     await db_log("INFO", "chat", "[BOT] Risposta finale inviata", {
                         "user_id": message.from_user.id,
                         "loop_count": loop_count,
+                        "parti": len(parti),
                         "text": bot_msg.content or ""
                     })
                 if not pending_write_tools:
                     return
                 break
                 
-            # We have tool calls — log l'intenzione dell'agente
+            # We have tool calls — invia contenuto intermedio se presente (messaggio di ragionamento)
             tc_dicts = [{"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments}} for tc in tool_calls]
+            
+            # Messaggi intermedi: se l'agente ha scritto qualcosa prima di invocare tool, invialo subito
+            if bot_msg.content and bot_msg.content.strip():
+                parti_intermedie = [p.strip() for p in bot_msg.content.split("---MSG---") if p.strip()]
+                for parte in parti_intermedie:
+                    try:
+                        await message.answer(format_for_telegram(parte), parse_mode="HTML")
+                    except Exception:
+                        await message.answer(parte.replace("**", "").replace("<", "").replace(">", ""))
+            
             await db_log("INFO", "chat", f"[AGENT] Tool call(s) richiesti (loop {loop_count})", {
                 "user_id": message.from_user.id,
                 "agent_text": bot_msg.content or "",
@@ -197,14 +216,19 @@ async def chat_handler(message: Message, state: FSMContext):
                 model_cls = TOOL_MODELS.get(fn_name)
                 if model_cls:
                     try:
-                        # Validiamo e dumpo gestendo gli alias (es. "Attività svolte")
                         fn_args = model_cls(**fn_args).model_dump(by_alias=True)
+                        consecutive_pydantic_errors = 0  # reset su successo
                     except ValidationError as e:
                         error_msg = str(e).replace('\n', ' ')
                         messages.append({"role": "tool", "name": fn_name, "content": f"Errore di validazione Pydantic: {error_msg}. Correggi la tua chiamata.", "tool_call_id": tc.id})
                         await db_log("WARNING", "chat", f"[TOOL:{fn_name}] Errore validazione Pydantic", {"error": error_msg, "args": fn_args})
+                        consecutive_pydantic_errors += 1
                         has_read_tools = True
-                        continue # Continua il ciclo while per permettere a Mistral di auto-correggersi
+                        if consecutive_pydantic_errors >= 2:
+                            await message.answer("⚠️ L'agente sta incontrando difficoltà a strutturare questa richiesta. Prova a riformulare con dettagli più precisi.")
+                            await db_log("ERROR", "chat", "[LOOP] Abort per 2 errori Pydantic consecutivi")
+                            return
+                        continue  # Permette a Mistral di auto-correggersi
                     
                 if fn_name == "richiedi_chiarimento_utente":
                     domanda = fn_args.get("domanda_da_porre", "Puoi chiarire?")
@@ -306,6 +330,16 @@ async def chat_handler(message: Message, state: FSMContext):
             await message.answer(testo_azioni, reply_markup=markup, parse_mode="HTML")
             return
     
+    except Exception as e:
+        # Cattura eccezioni inaspettate (API Mistral down, timeout, ecc.)
+        await db_log("ERROR", "chat", f"Eccezione non gestita in chat_handler: {e}", {"user_id": message.from_user.id})
+        try:
+            await message.answer(
+                "⚠️ Si è verificato un errore imprevisto. Il servizio di intelligenza artificiale potrebbe essere temporaneamente non disponibile. "
+                "Riprova tra qualche istante."
+            )
+        except Exception:
+            pass
     finally:
         await state.update_data(is_processing=False)
 
