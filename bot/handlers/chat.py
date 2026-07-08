@@ -22,7 +22,6 @@ from aiogram.fsm.context import FSMContext
 
 from database.connection import get_collection
 from services.ai_agent import chat_with_agent, summarize_context
-from services.sheets_service import append_session_to_sheet
 from utils.logger import db_log
 
 TOOL_MODELS = {
