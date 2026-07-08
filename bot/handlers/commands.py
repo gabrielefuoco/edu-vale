@@ -1,7 +1,7 @@
 import os
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message
+from aiogram.types import Message, ChatMemberUpdated
 from database.connection import get_collection, get_system_config, save_system_config, get_system_collection
 from bot.main_registry import AGENT_REGISTRY
 from utils.logger import logger
@@ -29,6 +29,68 @@ async def cmd_start(message: Message):
         reply_markup=keyboard
     )
 
+async def run_setup(bot, chat_id: int, user_id: str):
+    """Logica di setup riutilizzabile sia per il comando /setup che per l'evento di promozione."""
+    await bot.send_message(chat_id=chat_id, text="⚙️ Inizializzazione in corso... Controllo i permessi e creo i topic.")
+    
+    try:
+        topic_seg = await bot.create_forum_topic(chat_id=chat_id, name="📅 Segreteria Operativa")
+        topic_diar = await bot.create_forum_topic(chat_id=chat_id, name="📝 Diari di Bordo")
+        
+        seg_id = topic_seg.message_thread_id
+        diar_id = topic_diar.message_thread_id
+        
+        # Salva su DB
+        config_data = {
+            "group_id": chat_id,
+            "segreteria_id": seg_id,
+            "diario_id": diar_id
+        }
+        await save_system_config(config_data)
+        
+        # Invia i messaggi di benvenuto nei topic per inizializzarli visivamente
+        await bot.send_message(
+            chat_id=chat_id, 
+            text="👋 **Benvenuto nella Segreteria Operativa!**\n\nQui puoi chiedermi di registrare sessioni, aggiungere utenti, pianificare l'agenda o interrogare il database.\nScrivi un messaggio o invia un vocale per iniziare!", 
+            message_thread_id=seg_id,
+            parse_mode="Markdown"
+        )
+        
+        await bot.send_message(
+            chat_id=chat_id, 
+            text="📝 **Benvenuto nei Diari di Bordo!**\n\nQui puoi dettarmi i resoconti delle tue sessioni educative e io li formatterò in modo professionale, salvando eventuali note comportamentali.\nScrivi o invia un vocale per iniziare!", 
+            message_thread_id=diar_id,
+            parse_mode="Markdown"
+        )
+        
+        # Prova a nascondere e chiudere il topic Generale (potrebbe fallire se Telegram non lo permette in certi casi)
+        try:
+            await bot.close_general_forum_topic(chat_id=chat_id)
+            await bot.hide_general_forum_topic(chat_id=chat_id)
+        except Exception as ex:
+            logger.warning(f"Impossibile nascondere il topic Generale: {ex}")
+            
+        # Aggiorna il registry in memoria
+        if "segretario" in AGENT_REGISTRY:
+            AGENT_REGISTRY[seg_id] = AGENT_REGISTRY["segretario"]
+        if "diario" in AGENT_REGISTRY:
+            AGENT_REGISTRY[diar_id] = AGENT_REGISTRY["diario"]
+            
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ **Setup Completato con Successo!**\n\nSono stati creati i topic necessari e il bot è ora pienamente operativo in questo gruppo.\n- ID Gruppo: `{chat_id}`\n- Topic Segreteria: `{seg_id}`\n- Topic Diario: `{diar_id}`\n\nLe impostazioni sono state salvate nel database.",
+            parse_mode="Markdown"
+        )
+        logger.info(f"Setup completato da {user_id}. Nuovi topic creati: Segreteria={seg_id}, Diario={diar_id}")
+        
+    except Exception as e:
+        logger.error(f"Errore durante il setup: {e}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ **Errore durante la creazione dei topic.**\n\nDettaglio errore: `{e}`\n\n⚠️ **Verifica che:**\n1. Il gruppo abbia la modalità 'Argomenti' (Forum) abilitata.\n2. Il bot sia stato nominato Amministratore.\n3. Il bot abbia il permesso 'Gestisci argomenti' (Manage Topics).",
+            parse_mode="Markdown"
+        )
+
 @router.message(Command("setup"))
 async def cmd_setup(message: Message):
     user_id = str(message.from_user.id)
@@ -42,74 +104,31 @@ async def cmd_setup(message: Message):
         return await message.answer("⚠️ Questo comando deve essere eseguito all'interno di un Gruppo Telegram.")
         
     group_id = message.chat.id
+    await run_setup(message.bot, group_id, user_id)
+
+@router.my_chat_member()
+async def on_bot_promoted(event: ChatMemberUpdated):
+    user_id = str(event.from_user.id)
+    allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
+    allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
     
-    await message.answer("⚙️ Inizializzazione in corso... Controllo i permessi e creo i topic.")
-    
-    try:
-        topic_seg = await message.bot.create_forum_topic(chat_id=group_id, name="📅 Segreteria Operativa")
-        topic_diar = await message.bot.create_forum_topic(chat_id=group_id, name="📝 Diari di Bordo")
+    if not allowed_ids or user_id not in allowed_ids:
+        return
         
-        seg_id = topic_seg.message_thread_id
-        diar_id = topic_diar.message_thread_id
+    if event.new_chat_member.status != "administrator":
+        return
         
-        # Salva su DB
-        config_data = {
-            "group_id": group_id,
-            "segreteria_id": seg_id,
-            "diario_id": diar_id
-        }
-        await save_system_config(config_data)
-        
-        # Invia i messaggi di benvenuto nei topic per inizializzarli visivamente
-        await message.bot.send_message(
-            chat_id=group_id, 
-            text="👋 **Benvenuto nella Segreteria Operativa!**\n\nQui puoi chiedermi di registrare sessioni, aggiungere utenti, pianificare l'agenda o interrogare il database.\nScrivi un messaggio o invia un vocale per iniziare!", 
-            message_thread_id=seg_id,
-            parse_mode="Markdown"
+    # Controlla se ha i permessi per gestire i topic
+    can_manage_topics = getattr(event.new_chat_member, "can_manage_topics", False)
+    if not can_manage_topics:
+        await event.bot.send_message(
+            chat_id=event.chat.id,
+            text="⚠️ Mi hai appena nominato amministratore, ma **mi manca il permesso 'Gestisci argomenti'** (Manage Topics) necessario per creare le mie stanze di lavoro.\n\nAggiungilo nei permessi del bot e poi digita /setup."
         )
+        return
         
-        await message.bot.send_message(
-            chat_id=group_id, 
-            text="📝 **Benvenuto nei Diari di Bordo!**\n\nQui puoi dettarmi i resoconti delle tue sessioni educative e io li formatterò in modo professionale, salvando eventuali note comportamentali.\nScrivi o invia un vocale per iniziare!", 
-            message_thread_id=diar_id,
-            parse_mode="Markdown"
-        )
-        
-        # Prova a nascondere e chiudere il topic Generale (potrebbe fallire se Telegram non lo permette in certi casi)
-        try:
-            await message.bot.close_general_forum_topic(chat_id=group_id)
-            await message.bot.hide_general_forum_topic(chat_id=group_id)
-        except Exception as ex:
-            logger.warning(f"Impossibile nascondere il topic Generale: {ex}")
-            
-        # Aggiorna il registry in memoria
-        if "segretario" in AGENT_REGISTRY:
-            AGENT_REGISTRY[seg_id] = AGENT_REGISTRY["segretario"]
-        if "diario" in AGENT_REGISTRY:
-            AGENT_REGISTRY[diar_id] = AGENT_REGISTRY["diario"]
-            
-        await message.answer(
-            f"✅ **Setup Completato con Successo!**\n\n"
-            f"Sono stati creati i topic necessari e il bot è ora pienamente operativo in questo gruppo.\n"
-            f"- ID Gruppo: `{group_id}`\n"
-            f"- Topic Segreteria: `{seg_id}`\n"
-            f"- Topic Diario: `{diar_id}`\n\n"
-            f"Le impostazioni sono state salvate nel database. Non hai più bisogno di modificare il file `.env`!",
-            parse_mode="Markdown"
-        )
-        logger.info(f"Setup completato da {user_id}. Nuovi topic creati: Segreteria={seg_id}, Diario={diar_id}")
-        
-    except Exception as e:
-        logger.error(f"Errore durante il /setup: {e}")
-        await message.answer(
-            f"❌ **Errore durante la creazione dei topic.**\n\n"
-            f"Dettaglio errore: `{e}`\n\n"
-            f"⚠️ **Verifica che:**\n"
-            f"1. Il gruppo abbia la modalità 'Argomenti' (Forum) abilitata.\n"
-            f"2. Il bot sia stato nominato Amministratore.\n"
-            f"3. Il bot abbia il permesso 'Gestisci argomenti' (Manage Topics).",
-            parse_mode="Markdown"
-        )
+    # Se ha i permessi, lancia il setup in automatico!
+    await run_setup(event.bot, event.chat.id, user_id)
 
 @router.message(Command("aiuto"))
 async def cmd_aiuto(message: Message):
