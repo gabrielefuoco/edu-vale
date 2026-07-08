@@ -40,6 +40,12 @@ def format_for_telegram(text: str) -> str:
     """Converte la sintassi Markdown di base nell'HTML di Telegram.
     Ordine corretto: escape HTML prima, poi converti markdown in tag HTML.
     """
+    # 0. Rimuovi i tag XML dei tool generati dal LLM (es. <richiedichiarimentoutente>)
+    tool_names = list(TOOL_MODELS.keys())
+    for tn in tool_names:
+        text = re.sub(rf'</?{tn}>', '', text, flags=re.IGNORECASE)
+        text = re.sub(rf'</?{tn.replace("_", "")}>', '', text, flags=re.IGNORECASE)
+        
     # 1. Escape dei caratteri speciali HTML che Mistral potrebbe generare
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     
@@ -63,8 +69,22 @@ def format_for_telegram(text: str) -> str:
         
     return text
 
-def format_tool_args(args: dict) -> str:
-    return "\n".join([f"• **{k}**: {v}" for k, v in args.items()])
+def format_tool_for_human(fn_name: str, fn_args: dict) -> str:
+    if fn_name == "registra_sessione":
+        return f"📝 <b>Registra sessione</b> per {fn_args.get('Utente')} ({fn_args.get('Ore')} ore)"
+    elif fn_name == "pianifica_sessione":
+        return f"📅 <b>Pianifica sessione</b> per {fn_args.get('Utente')} il {fn_args.get('Data')} ({fn_args.get('Ora Inizio')}-{fn_args.get('Ora Fine')})"
+    elif fn_name == "crea_utente":
+        ore = f"{fn_args.get('ore_settimanali')} ore" if fn_args.get('ore_settimanali') else "nessuna ora fissata"
+        return f"👤 <b>Crea utente</b> {fn_args.get('nome')} ({ore})"
+    elif fn_name == "elimina_sessione_pianificata":
+        return f"🗑️ <b>Annulla sessione</b> di {fn_args.get('Utente')} del {fn_args.get('Data')}"
+    elif fn_name == "modifica_utente":
+        return f"✏️ <b>Modifica utente</b> {fn_args.get('nome_utente')}"
+    elif fn_name == "salva_nota_utente":
+        return f"📌 <b>Salva nota</b> per {fn_args.get('nome_utente')}"
+    else:
+        return f"🔧 <b>{fn_name}</b>\n" + "\n".join([f"   - {k}: {v}" for k, v in fn_args.items()])
 
 router = Router()
 
@@ -270,10 +290,8 @@ async def execute_agentic_loop(message: Message, state: FSMContext, messages: li
         
         testo_azioni = "L'agente vuole eseguire le seguenti azioni:\n\n"
         for i, pt in enumerate(pending_write_tools, 1):
-            testo_azioni += f"{i}. <b>{pt['name']}</b>\n"
-            for k, v in pt['args'].items():
-                testo_azioni += f"   - {k}: {v}\n"
-            testo_azioni += "\n"
+            desc = format_tool_for_human(pt['name'], pt['args'])
+            testo_azioni += f"{i}. {desc}\n\n"
             
         testo_azioni += "Cosa vuoi fare?"
         
@@ -465,10 +483,10 @@ async def start_single_confirmation(callback: CallbackQuery, state: FSMContext):
     ])
     
     queue_msg = f" (1 di {len(queue) + 1})"
-    formatted_args = format_tool_args(first_tool['args'])
+    desc_umana = format_tool_for_human(first_tool['name'], first_tool['args'])
     
     await callback.message.edit_text(
-        format_for_telegram(f"Azione in sospeso {queue_msg}:\n<b>{first_tool['name']}</b>\n\n{formatted_args}\n\nConfermi?"),
+        format_for_telegram(f"Azione in sospeso {queue_msg}:\n{desc_umana}\n\nConfermi?"),
         reply_markup=markup,
         parse_mode="HTML"
     )
@@ -586,10 +604,10 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
         ])
         
         queue_msg = f" (rimanenti in coda: {len(queue)})" if queue else " (ultimo in coda)"
-        formatted_args = format_tool_args(next_tool['args'])
+        desc_umana = format_tool_for_human(next_tool['name'], next_tool['args'])
         
         await callback.message.edit_text(
-            format_for_telegram(f"{res_text}\n\nAzione successiva:\n<b>{next_tool['name']}</b>{queue_msg}\n\n{formatted_args}\n\nConfermi?"), 
+            format_for_telegram(f"{res_text}\n\nAzione successiva:\n{desc_umana}{queue_msg}\n\nConfermi?"), 
             reply_markup=markup,
             parse_mode="HTML"
         )
@@ -631,10 +649,10 @@ async def cancel_tool_call(callback: CallbackQuery, state: FSMContext):
         ])
         
         queue_msg = f" (rimanenti in coda: {len(queue)})" if queue else " (ultimo in coda)"
-        formatted_args = format_tool_args(next_tool['args'])
+        desc_umana = format_tool_for_human(next_tool['name'], next_tool['args'])
         
         await callback.message.edit_text(
-            format_for_telegram(f"❌ Azione '{fn_name}' annullata.\n\nAzione successiva:\n<b>{next_tool['name']}</b>{queue_msg}\n\n{formatted_args}\n\nConfermi?"), 
+            format_for_telegram(f"❌ Azione '{fn_name}' annullata.\n\nAzione successiva:\n{desc_umana}{queue_msg}\n\nConfermi?"), 
             reply_markup=markup,
             parse_mode="HTML"
         )
