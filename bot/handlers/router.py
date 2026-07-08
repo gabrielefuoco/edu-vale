@@ -60,12 +60,16 @@ async def route_message(message: Message):
         segreteria_id = sys_config.get("segreteria_id")
         diario_id = sys_config.get("diario_id")
         
+        await db_log("DEBUG", "router", f"Messaggio da {user_id}. Thread: {message.message_thread_id}. SysConfig: Seg={segreteria_id}, Diar={diario_id}")
+        
         # Se non è stato ancora configurato, ignoriamo qualsiasi messaggio non-comando
         if not segreteria_id or not diario_id:
+            await db_log("DEBUG", "router", "Ignorato: Configurazione non trovata.")
             return
             
         # Ignora i messaggi nei topic non gestiti (incluso il topic Generale)
         if message.message_thread_id not in [segreteria_id, diario_id]:
+            await db_log("DEBUG", "router", f"Ignorato: thread_id {message.message_thread_id} non in [{segreteria_id}, {diario_id}]")
             return
             
         config = {
