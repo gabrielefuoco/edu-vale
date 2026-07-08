@@ -56,6 +56,18 @@ async def route_message(message: Message):
         else:
             text = message.text
             
+        sys_config = await get_system_config()
+        segreteria_id = sys_config.get("segreteria_id")
+        diario_id = sys_config.get("diario_id")
+        
+        # Se non è stato ancora configurato, ignoriamo qualsiasi messaggio non-comando
+        if not segreteria_id or not diario_id:
+            return
+            
+        # Ignora i messaggi nei topic non gestiti (incluso il topic Generale)
+        if message.message_thread_id not in [segreteria_id, diario_id]:
+            return
+            
         config = {
             "configurable": {
                 "thread_id": thread_key,
