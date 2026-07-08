@@ -14,7 +14,7 @@ class AggiungiNotaArgs(BaseModel):
 async def aggiungi_nota_utente(nome_utente: str, nota_testuale: str, config: RunnableConfig) -> str:
     """Aggiunge una nuova nota episodica a un utente per tracciare progressi o avvenimenti."""
     uid = config["configurable"]["user_id"]
-    col_utenti = await get_collection(f"utenti")
+    col_utenti = await get_collection(f"utenti", uid)
     pattern = re.compile(nome_utente, re.IGNORECASE)
     
     user = await col_utenti.find_one({"nome": {"$regex": pattern}})
@@ -41,7 +41,7 @@ class SalvaDiarioArgs(BaseModel):
 async def salva_diario_bordo(data: str, utente: str, testo_generato: str, config: RunnableConfig, note_estratte: list[str] = None) -> str:
     """Salva un diario di bordo nel database. Deve essere approvato dall'operatore."""
     uid = config["configurable"]["user_id"]
-    col_diari = await get_collection(f"diari_bordo")
+    col_diari = await get_collection(f"diari_bordo", uid)
     
     doc = {
         "data": data,

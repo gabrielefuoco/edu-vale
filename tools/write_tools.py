@@ -17,7 +17,7 @@ class RegistraSessioneArgs(BaseModel):
 async def registra_sessione(Giorno: str, Ore: float, Utente: str, Attivita_svolte: str, config: RunnableConfig, Luogo: str = None) -> str:
     """Salva una sessione GIA' AVVENUTA in passato o nella giornata di oggi."""
     uid = config["configurable"]["user_id"]
-    col_sessioni = await get_collection(f"diario_sessioni")
+    col_sessioni = await get_collection(f"diario_sessioni", uid)
     
     doc = {
         "data": Giorno,
@@ -40,7 +40,7 @@ class PianificaSessioneArgs(BaseModel):
 async def pianifica_sessione(Data: str, Ora_Inizio: str, Ora_Fine: str, Utente: str, config: RunnableConfig, Luogo: str = None) -> str:
     """Pianifica un appuntamento FUTURO in agenda."""
     uid = config["configurable"]["user_id"]
-    col_prog = await get_collection(f"programmazione")
+    col_prog = await get_collection(f"programmazione", uid)
     
     doc = {
         "data": Data,
@@ -61,7 +61,7 @@ class CreaUtenteArgs(BaseModel):
 async def crea_utente(nome: str, config: RunnableConfig, ore_settimanali: float = 0, preferenze: str = "") -> str:
     """Crea un nuovo utente. Usalo SOLO se l'utente non è nella lista."""
     uid = config["configurable"]["user_id"]
-    col_utenti = await get_collection(f"utenti")
+    col_utenti = await get_collection(f"utenti", uid)
     pattern = re.compile(f"^{nome}$", re.IGNORECASE)
     
     existing = await col_utenti.find_one({"nome": {"$regex": pattern}})
@@ -85,7 +85,7 @@ class EliminaSessionePianificataArgs(BaseModel):
 async def elimina_sessione_pianificata(Data: str, Utente: str, config: RunnableConfig) -> str:
     """Annulla e rimuove un appuntamento futuro precedentemente pianificato."""
     uid = config["configurable"]["user_id"]
-    col_prog = await get_collection(f"programmazione")
+    col_prog = await get_collection(f"programmazione", uid)
     pattern = re.compile(Utente, re.IGNORECASE)
     
     res = await col_prog.delete_one({"data": Data, "utente_id": {"$regex": pattern}})
@@ -103,7 +103,7 @@ class ModificaUtenteArgs(BaseModel):
 async def modifica_utente(nome_utente: str, config: RunnableConfig, ore_settimanali: float = None, preferenze: str = None) -> str:
     """Aggiorna i dati generali di un utente esistente."""
     uid = config["configurable"]["user_id"]
-    col_utenti = await get_collection(f"utenti")
+    col_utenti = await get_collection(f"utenti", uid)
     pattern = re.compile(nome_utente, re.IGNORECASE)
     
     update_doc = {}
@@ -125,7 +125,7 @@ class EliminaUtenteArgs(BaseModel):
 async def elimina_utente(nome_utente: str, config: RunnableConfig) -> str:
     """Elimina definitivamente un utente dal database. ATTENZIONE: azione irreversibile."""
     uid = config["configurable"]["user_id"]
-    col_utenti = await get_collection("utenti")
+    col_utenti = await get_collection("utenti", uid)
     pattern = re.compile(nome_utente, re.IGNORECASE)
     
     res = await col_utenti.delete_one({"nome": {"$regex": pattern}})
@@ -145,7 +145,7 @@ class ModificaSessionePianificataArgs(BaseModel):
 async def modifica_sessione_pianificata(Data_Attuale: str, Utente: str, config: RunnableConfig, Nuova_Data: str = None, Nuova_Ora_Inizio: str = None, Nuova_Ora_Fine: str = None, Nuovo_Luogo: str = None) -> str:
     """Modifica un appuntamento futuro già pianificato."""
     uid = config["configurable"]["user_id"]
-    col_prog = await get_collection("programmazione")
+    col_prog = await get_collection("programmazione", uid)
     pattern = re.compile(Utente, re.IGNORECASE)
     
     update_doc = {}
@@ -172,7 +172,7 @@ class ModificaSessionePassataArgs(BaseModel):
 async def modifica_sessione_passata(id_sessione: str, config: RunnableConfig, Nuova_Data: str = None, Nuove_Ore: float = None, Nuove_Attivita: str = None) -> str:
     """Modifica una sessione già registrata nel diario."""
     uid = config["configurable"]["user_id"]
-    col_sessioni = await get_collection("diario_sessioni")
+    col_sessioni = await get_collection("diario_sessioni", uid)
     
     update_doc = {}
     if Nuova_Data: update_doc["data"] = Nuova_Data
@@ -197,7 +197,7 @@ class EliminaSessionePassataArgs(BaseModel):
 async def elimina_sessione_passata(id_sessione: str, config: RunnableConfig) -> str:
     """Elimina definitivamente una sessione passata dal diario."""
     uid = config["configurable"]["user_id"]
-    col_sessioni = await get_collection("diario_sessioni")
+    col_sessioni = await get_collection("diario_sessioni", uid)
     
     try:
         res = await col_sessioni.delete_one({"_id": ObjectId(id_sessione)})
@@ -216,7 +216,7 @@ class ModificaNotaUtenteArgs(BaseModel):
 async def modifica_nota_utente(nome_utente: str, id_nota: int, nuovo_testo: str, config: RunnableConfig) -> str:
     """Modifica il testo di una nota episodica esistente."""
     uid = config["configurable"]["user_id"]
-    col_utenti = await get_collection("utenti")
+    col_utenti = await get_collection("utenti", uid)
     pattern = re.compile(nome_utente, re.IGNORECASE)
     
     user = await col_utenti.find_one({"nome": {"$regex": pattern}})
@@ -245,7 +245,7 @@ class EliminaNotaUtenteArgs(BaseModel):
 async def elimina_nota_utente(nome_utente: str, id_nota: int, config: RunnableConfig) -> str:
     """Elimina una nota episodica di un utente."""
     uid = config["configurable"]["user_id"]
-    col_utenti = await get_collection("utenti")
+    col_utenti = await get_collection("utenti", uid)
     pattern = re.compile(nome_utente, re.IGNORECASE)
     
     user = await col_utenti.find_one({"nome": {"$regex": pattern}})

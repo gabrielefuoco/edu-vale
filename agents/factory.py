@@ -48,8 +48,9 @@ def create_agent(
         
         # 1. Recuperiamo i dati freschi dal DB per costruire il System Prompt
         if agent_name == "segretario":
-            col_utenti = await get_collection("utenti")
-            col_prog = await get_collection("programmazione")
+            uid = config.get("configurable", {}).get("user_id")
+            col_utenti = await get_collection("utenti", uid)
+            col_prog = await get_collection("programmazione", uid)
             oggi = datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
             
             utenti_list = await col_utenti.find().to_list(100)

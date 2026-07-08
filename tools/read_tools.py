@@ -12,7 +12,7 @@ class CercaUtentiArgs(BaseModel):
 async def cerca_utenti(query: str, config: RunnableConfig) -> str:
     """Cerca nel database il nome completo di un utente. Restituisce anche il suo ID e la lista delle note episodiche con i relativi ID."""
     uid = config["configurable"]["user_id"]
-    col_utenti = await get_collection(f"utenti")
+    col_utenti = await get_collection(f"utenti", uid)
     pattern = re.compile(query, re.IGNORECASE)
     cursor = col_utenti.find({"nome": {"$regex": pattern}})
     utenti = await cursor.to_list(length=10)
@@ -42,7 +42,7 @@ class LeggiStoricoSessioniArgs(BaseModel):
 async def leggi_storico_sessioni(utente: str, limite: int, config: RunnableConfig) -> str:
     """Legge le sessioni passate di un utente per ricavare contesto. Restituisce anche l'id di ogni sessione per eventuali modifiche."""
     uid = config["configurable"]["user_id"]
-    col_sessioni = await get_collection(f"diario_sessioni")
+    col_sessioni = await get_collection(f"diario_sessioni", uid)
     cursor = col_sessioni.find({"utente_id": utente}).sort("data", -1).limit(limite)
     sessioni = await cursor.to_list(length=limite)
     
@@ -62,7 +62,7 @@ class LeggiAgendaArgs(BaseModel):
 async def leggi_agenda(data_inizio: str, config: RunnableConfig, data_fine: str = None) -> str:
     """Legge gli appuntamenti pianificati nel futuro."""
     uid = config["configurable"]["user_id"]
-    col_prog = await get_collection(f"programmazione")
+    col_prog = await get_collection(f"programmazione", uid)
     query = {"data": {"$gte": data_inizio}}
     if data_fine:
         query["data"]["$lte"] = data_fine
