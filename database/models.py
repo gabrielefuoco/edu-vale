@@ -2,12 +2,16 @@ from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+class NotaEpisodica(BaseModel):
+    id: int
+    testo: str
+
 class User(BaseModel):
     nome: str
     indirizzo: Optional[str] = None
-    ore_settimanali: int = 0
-    note: Optional[str] = None
-    preferenze: List[str] = []
+    ore_settimanali: float = 0
+    preferenze: Optional[str] = ""
+    note: List[NotaEpisodica] = []
 
 class UserInDB(User):
     id: str = Field(alias="_id")
@@ -37,7 +41,7 @@ class ToolRegistraSessione(BaseModel):
     Ore: float
     Utente: str
     Luogo: Optional[str] = None
-    Attività_svolte: str = Field(alias="Attività svolte") # alias per lo spazio
+    Attività_svolte: str = Field(alias="Attività svolte")
     
 class ToolPianificaSessione(BaseModel):
     Data: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
@@ -49,8 +53,7 @@ class ToolPianificaSessione(BaseModel):
 class ToolCreaUtente(BaseModel):
     nome: str
     ore_settimanali: float = 0
-    note: Optional[str] = ""
-    preferenze: List[str] = []
+    preferenze: Optional[str] = ""
 
 class ToolCercaUtenti(BaseModel):
     query: str
@@ -67,14 +70,43 @@ class ToolEliminaSessionePianificata(BaseModel):
     Data: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     Utente: str
 
+class ToolModificaSessionePianificata(BaseModel):
+    Data_Attuale: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    Utente: str
+    Nuova_Data: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    Nuova_Ora_Inizio: Optional[str] = Field(alias="Nuova Ora Inizio", default=None, pattern=r"^\d{2}:\d{2}$")
+    Nuova_Ora_Fine: Optional[str] = Field(alias="Nuova Ora Fine", default=None, pattern=r"^\d{2}:\d{2}$")
+    Nuovo_Luogo: Optional[str] = None
+
+class ToolModificaSessionePassata(BaseModel):
+    id_sessione: str
+    Nuova_Data: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    Nuove_Ore: Optional[float] = None
+    Nuove_Attivita: Optional[str] = Field(alias="Nuove Attività", default=None)
+
+class ToolEliminaSessionePassata(BaseModel):
+    id_sessione: str
+
 class ToolModificaUtente(BaseModel):
     nome_utente: str
     ore_settimanali: Optional[float] = None
-    note: Optional[str] = None
+    preferenze: Optional[str] = None
+
+class ToolEliminaUtente(BaseModel):
+    nome_utente: str
 
 class ToolRichiediChiarimentoUtente(BaseModel):
     domanda_da_porre: str
 
-class ToolSalvaNotaUtente(BaseModel):
+class ToolAggiungiNotaUtente(BaseModel):
     nome_utente: str
     nota_testuale: str
+
+class ToolModificaNotaUtente(BaseModel):
+    nome_utente: str
+    id_nota: int
+    nuovo_testo: str
+
+class ToolEliminaNotaUtente(BaseModel):
+    nome_utente: str
+    id_nota: int

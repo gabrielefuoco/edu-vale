@@ -1,3 +1,4 @@
+from bot.handlers.tool_executor import execute_single_tool
 import json
 import io
 import csv
@@ -11,7 +12,8 @@ from database.models import (
     ToolRegistraSessione, ToolPianificaSessione, ToolCreaUtente, 
     ToolCercaUtenti, ToolLeggiStoricoSessioni, ToolLeggiAgenda, 
     ToolEliminaSessionePianificata, ToolModificaUtente, ToolRichiediChiarimentoUtente,
-    ToolSalvaNotaUtente
+    ToolAggiungiNotaUtente, ToolModificaNotaUtente, ToolEliminaNotaUtente, ToolEliminaUtente,
+    ToolModificaSessionePianificata, ToolModificaSessionePassata, ToolEliminaSessionePassata
 )
 
 from aiogram import Router, F
@@ -33,7 +35,13 @@ TOOL_MODELS = {
     "elimina_sessione_pianificata": ToolEliminaSessionePianificata,
     "modifica_utente": ToolModificaUtente,
     "richiedi_chiarimento_utente": ToolRichiediChiarimentoUtente,
-    "salva_nota_utente": ToolSalvaNotaUtente
+    "aggiungi_nota_utente": ToolAggiungiNotaUtente,
+    "modifica_nota_utente": ToolModificaNotaUtente,
+    "elimina_nota_utente": ToolEliminaNotaUtente,
+    "elimina_utente": ToolEliminaUtente,
+    "modifica_sessione_pianificata": ToolModificaSessionePianificata,
+    "modifica_sessione_passata": ToolModificaSessionePassata,
+    "elimina_sessione_passata": ToolEliminaSessionePassata
 }
 
 def format_for_telegram(text: str) -> str:
@@ -77,12 +85,24 @@ def format_tool_for_human(fn_name: str, fn_args: dict) -> str:
     elif fn_name == "crea_utente":
         ore = f"{fn_args.get('ore_settimanali')} ore" if fn_args.get('ore_settimanali') else "nessuna ora fissata"
         return f"👤 <b>Crea utente</b> {fn_args.get('nome')} ({ore})"
+    elif fn_name == "elimina_utente":
+        return f"🗑️ <b>Elimina utente</b> {fn_args.get('nome_utente')}"
     elif fn_name == "elimina_sessione_pianificata":
         return f"🗑️ <b>Annulla sessione</b> di {fn_args.get('Utente')} del {fn_args.get('Data')}"
+    elif fn_name == "modifica_sessione_pianificata":
+        return f"✏️ <b>Modifica agenda</b> per {fn_args.get('Utente')} (Data attuale: {fn_args.get('Data_Attuale')})"
+    elif fn_name == "modifica_sessione_passata":
+        return f"✏️ <b>Modifica sessione passata</b> (ID: {fn_args.get('id_sessione')})"
+    elif fn_name == "elimina_sessione_passata":
+        return f"🗑️ <b>Elimina sessione passata</b> (ID: {fn_args.get('id_sessione')})"
     elif fn_name == "modifica_utente":
         return f"✏️ <b>Modifica utente</b> {fn_args.get('nome_utente')}"
-    elif fn_name == "salva_nota_utente":
-        return f"📌 <b>Salva nota</b> per {fn_args.get('nome_utente')}"
+    elif fn_name == "aggiungi_nota_utente":
+        return f"📌 <b>Aggiungi nota</b> per {fn_args.get('nome_utente')}"
+    elif fn_name == "modifica_nota_utente":
+        return f"✏️ <b>Modifica nota</b> per {fn_args.get('nome_utente')} (ID: {fn_args.get('id_nota')})"
+    elif fn_name == "elimina_nota_utente":
+        return f"🗑️ <b>Elimina nota</b> per {fn_args.get('nome_utente')} (ID: {fn_args.get('id_nota')})"
     else:
         return f"🔧 <b>{fn_name}</b>\n" + "\n".join([f"   - {k}: {v}" for k, v in fn_args.items()])
 
@@ -108,7 +128,7 @@ async def get_system_prompt() -> dict:
             f"Gli utenti attualmente in carico sono: {utenti_str}.\n"
             f"📍 LA TUA AGENDA DI OGGI:\n{agenda_str}\n\n"
             "Il tuo scopo è estrarre dati strutturati per eseguire i Tool a tua disposizione "
-            "(registra_sessione, pianifica_sessione, crea_utente, cerca_utenti, leggi_storico_sessioni, leggi_agenda, elimina_sessione_pianificata, modifica_utente, richiedi_chiarimento_utente, salva_nota_utente). "
+            "(registra_sessione, pianifica_sessione, crea_utente, cerca_utenti, leggi_storico_sessioni, leggi_agenda, elimina_sessione_pianificata, modifica_sessione_pianificata, modifica_sessione_passata, elimina_sessione_passata, elimina_utente, modifica_utente, richiedi_chiarimento_utente, aggiungi_nota_utente, modifica_nota_utente, elimina_nota_utente). "
             "REGOLE DI COMPORTAMENTO (AGENTE RE-ACT):\n"
             "1. RAGIONAMENTO E VERIFICA: Valuta sempre se hai tutti i dati prima di agire. Se un nome è ambiguo, usa 'cerca_utenti'. PRIMA di eliminare o modificare appuntamenti in blocco, DEVI TASSATIVAMENTE usare 'leggi_agenda' per verificare cosa esiste realmente. Non tirare a indovinare date o nomi se non sei sicuro che esistano.\n"
             "2. MULTI-TOOL: Puoi chiamare più tool contemporaneamente (es. registrare 3 sessioni diverse in un solo colpo).\n"
@@ -223,7 +243,7 @@ async def execute_agentic_loop(message: Message, state: FSMContext, messages: li
                     utenti = await col.find({"nome": {"$regex": query, "$options": "i"}}).to_list(10)
                 
                 if utenti:
-                    res_str = "Utenti trovati:\n" + "\n".join([f"- {u.get('nome')} (Ore: {u.get('ore_settimanali', 0)}), Note: {u.get('note', '')}, Preferenze Episodiche: {u.get('preferenze', [])}" for u in utenti])
+                    res_str = "Utenti trovati:\n" + "\n".join([f"- {u.get('nome')} (Ore: {u.get('ore_settimanali', 0)}), Preferenze Statiche: {u.get('preferenze', '')}, Note Episodiche: {u.get('note', [])}" for u in utenti])
                 else:
                     res_str = "Nessun utente trovato con quel nome."
                 messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
@@ -238,6 +258,8 @@ async def execute_agentic_loop(message: Message, state: FSMContext, messages: li
                 if not res:
                     res_str = "Nessuna sessione trovata per questo utente."
                 else:
+                    for r in res:
+                        r["parsed"]["_id"] = str(r["_id"])
                     res_str = json.dumps([r["parsed"] for r in res])
                 messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
                 await db_log("INFO", "chat", f"[TOOL:{fn_name}] Risultato", {"utente": utente, "result": res_str})
@@ -384,73 +406,9 @@ async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):
     for tool in queue:
         fn_name = tool["name"]
         fn_args = tool["args"]
+        icona, res, messages = await execute_single_tool(fn_name, fn_args, messages)
+        res_text += f"{icona} {res}\n"
         
-        if fn_name == "registra_sessione":
-            success, msg = await append_session_to_sheet(fn_args)
-            col = await get_collection("diario_sessioni")
-            await col.insert_one({"parsed": fn_args, "timestamp": datetime.now(ZoneInfo("Europe/Rome"))})
-            
-            icona = "✅" if success else "⚠️"
-            res_text += f"- Sessione registrata: {fn_args.get('Utente')} ({fn_args.get('Ore')}h). {msg}\n"
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione registrata. Sheets: {msg}"})
-            
-        elif fn_name == "pianifica_sessione":
-            col = await get_collection("programmazione")
-            await col.insert_one(fn_args)
-            res_text += f"- Sessione pianificata: {fn_args.get('Utente')} il {fn_args.get('Data')}\n"
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione pianificata con successo."})
-            
-        elif fn_name == "crea_utente":
-            col = await get_collection("utenti")
-            existing = await col.find_one({"nome": {"$regex": f"^{fn_args.get('nome')}$", "$options": "i"}})
-            if not existing:
-                await col.insert_one({
-                    "nome": fn_args.get("nome"),
-                    "ore_settimanali": fn_args.get("ore_settimanali", 0),
-                    "note": fn_args.get("note", ""),
-                    "preferenze": []
-                })
-                res_text += f"- Utente creato: {fn_args.get('nome')}\n"
-                messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente creato con successo."})
-            else:
-                res_text += f"- Creazione ignorata: {fn_args.get('nome')} esiste già.\n"
-                messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: L'utente esisteva già."})
-            
-        elif fn_name == "elimina_sessione_pianificata":
-            col = await get_collection("programmazione")
-            result = await col.delete_one({"Data": fn_args.get("Data"), "Utente": {"$regex": fn_args.get("Utente", ""), "$options": "i"}})
-            if result.deleted_count > 0:
-                res_text += f"- Sessione annullata: {fn_args.get('Utente')} il {fn_args.get('Data')}\n"
-                messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione annullata con successo."})
-            else:
-                res_text += f"- Impossibile annullare: nessuna sessione trovata per {fn_args.get('Utente')} il {fn_args.get('Data')}\n"
-                messages.append({"role": "system", "content": f"Azione '{fn_name}' fallita: Nessuna sessione trovata da annullare."})
-                
-        elif fn_name == "modifica_utente":
-            col = await get_collection("utenti")
-            update_data = {}
-            if "ore_settimanali" in fn_args:
-                update_data["ore_settimanali"] = fn_args["ore_settimanali"]
-            if "note" in fn_args:
-                update_data["note"] = fn_args["note"]
-                
-            if update_data:
-                await col.update_one({"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}}, {"$set": update_data})
-                res_text += f"- Utente {fn_args.get('nome_utente', '')} aggiornato.\n"
-                messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente aggiornato con successo."})
-            else:
-                res_text += f"- Nessun campo da aggiornare per {fn_args.get('nome_utente', '')}.\n"
-                messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: Nessuna modifica specificata."})
-
-        elif fn_name == "salva_nota_utente":
-            col = await get_collection("utenti")
-            await col.update_one(
-                {"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}},
-                {"$push": {"preferenze": fn_args.get("nota_testuale")}}
-            )
-            res_text += f"- Nota salvata in memoria per {fn_args.get('nome_utente')}.\n"
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Nota utente salvata in memoria episodica."})
-            
     await state.update_data(pending_tools_queue=[], messages=messages)
     await callback.message.edit_text(res_text, parse_mode="HTML")
     
@@ -517,75 +475,8 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
     if not fn_name:
         return await callback.message.edit_text("Nessuna azione in sospeso.")
     
-    if fn_name == "registra_sessione":
-        success, msg = await append_session_to_sheet(fn_args)
-        col = await get_collection("diario_sessioni")
-        await col.insert_one({"parsed": fn_args, "timestamp": datetime.now(ZoneInfo("Europe/Rome"))})
-        
-        icona = "✅" if success else "⚠️"
-        res_text = f"✅ Sessione registrata: {fn_args.get('Utente')}. {msg}"
-        messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione registrata. Sheets: {msg}"})
-        
-    elif fn_name == "pianifica_sessione":
-        col = await get_collection("programmazione")
-        await col.insert_one(fn_args)
-        res_text = "✅ Sessione pianificata."
-        messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione pianificata con successo."})
-        
-    elif fn_name == "crea_utente":
-        col = await get_collection("utenti")
-        existing = await col.find_one({"nome": {"$regex": f"^{fn_args.get('nome')}$", "$options": "i"}})
-        if not existing:
-            await col.insert_one({
-                "nome": fn_args.get("nome"),
-                "ore_settimanali": fn_args.get("ore_settimanali", 0),
-                "note": fn_args.get("note", ""),
-                "preferenze": fn_args.get("preferenze", [])
-            })
-            res_text = "✅ Utente creato."
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente creato con successo."})
-        else:
-            res_text = "⚠️ Utente già esistente."
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: L'utente esisteva già."})
-        
-    elif fn_name == "elimina_sessione_pianificata":
-        col = await get_collection("programmazione")
-        result = await col.delete_one({"Data": fn_args.get("Data"), "Utente": {"$regex": fn_args.get("Utente", ""), "$options": "i"}})
-        if result.deleted_count > 0:
-            res_text = "✅ Sessione annullata."
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione annullata con successo."})
-        else:
-            res_text = "⚠️ Impossibile annullare: sessione non trovata."
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' fallita: Nessuna sessione trovata da annullare."})
-            
-    elif fn_name == "modifica_utente":
-        col = await get_collection("utenti")
-        update_data = {}
-        if "ore_settimanali" in fn_args:
-            update_data["ore_settimanali"] = fn_args["ore_settimanali"]
-        if "note" in fn_args:
-            update_data["note"] = fn_args["note"]
-            
-        if update_data:
-            await col.update_one({"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}}, {"$set": update_data})
-            res_text = "✅ Utente aggiornato."
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Utente aggiornato con successo."})
-        else:
-            res_text = "⚠️ Nessun campo da aggiornare."
-            messages.append({"role": "system", "content": f"Azione '{fn_name}' ignorata: Nessuna modifica specificata."})
-            
-    elif fn_name == "salva_nota_utente":
-        col = await get_collection("utenti")
-        await col.update_one(
-            {"nome": {"$regex": fn_args.get("nome_utente", ""), "$options": "i"}},
-            {"$push": {"preferenze": fn_args.get("nota_testuale")}}
-        )
-        res_text = "✅ Nota salvata."
-        messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Nota utente salvata in memoria episodica."})
-        
-    else:
-        res_text = "Errore: Tool sconosciuto."
-        messages.append({"role": "system", "content": f"Azione '{fn_name}' fallita: Tool sconosciuto."})
+    icona, res_text, messages = await execute_single_tool(fn_name, fn_args, messages)
+    res_text = f"{icona} {res_text}"
     
     queue = data.get("pending_tools_queue", [])
     if queue:

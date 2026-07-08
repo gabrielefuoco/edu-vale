@@ -107,3 +107,47 @@ def _sync_clear_all_sheets():
 
 async def clear_all_sheets():
     return await asyncio.to_thread(_sync_clear_all_sheets)
+
+def _sync_rebuild_month_sheet(sheet_name: str, sessions_data: list):
+    spreadsheet = get_spreadsheet()
+    if not spreadsheet:
+        return False, "Impossibile accedere al foglio Google."
+    try:
+        try:
+            worksheet = spreadsheet.worksheet(sheet_name)
+            worksheet.clear()
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="10")
+            
+        rows_to_insert = [["Giorno", "Ore", "Utente", "Luogo", "Attività svolte"]]
+        for data in sessions_data:
+            rows_to_insert.append([
+                data.get("Giorno", ""),
+                data.get("Ore", ""),
+                data.get("Utente", ""),
+                data.get("Luogo", ""),
+                data.get("Attività svolte", "")
+            ])
+            
+        worksheet.update(rows_to_insert) # works in older gspread, or append_rows
+        return True, f"Foglio {sheet_name} rigenerato."
+    except Exception as e:
+        # Fallback to append_rows if update fails due to signature changes in gspread
+        try:
+            worksheet.clear()
+            worksheet.append_rows(rows_to_insert)
+            return True, f"Foglio {sheet_name} rigenerato (fallback)."
+        except Exception as e2:
+            return False, f"Errore rigenerazione {sheet_name}: {str(e2)}"
+
+async def rebuild_month_sheet(sheet_name: str, sessions_data: list):
+    try:
+        success, message = await asyncio.to_thread(_sync_rebuild_month_sheet, sheet_name, sessions_data)
+        if success:
+            await db_log("INFO", "sheets_service", f"Foglio {sheet_name} rigenerato da DB")
+        else:
+            await db_log("ERROR", "sheets_service", f"Errore logico Fogli Google: {message}")
+        return success, message
+    except Exception as e:
+        await db_log("ERROR", "sheets_service", f"Eccezione rigenerazione: {e}")
+        return False, f"Errore salvataggio Google Sheets: {str(e)}"

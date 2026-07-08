@@ -54,7 +54,7 @@ TOOLS = [
                 "properties": {
                     "nome": {"type": "string", "description": "Nome e cognome dell'utente"},
                     "ore_settimanali": {"type": "number", "description": "Ore settimanali previste, default 0 se non specificato"},
-                    "note": {"type": "string", "description": "Eventuali note sull'utente"}
+                    "preferenze": {"type": "string", "description": "Informazioni generali e preferenze statiche sull'utente"}
                 },
                 "required": ["nome"]
             }
@@ -64,7 +64,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "cerca_utenti",
-            "description": "Cerca nel database il nome completo di un utente. Usalo SEMPRE se l'utente fornisce solo il nome di battesimo (es. 'Mario') per disambiguare.",
+            "description": "Cerca nel database il nome completo di un utente. Restituisce anche il suo ID e la lista delle note episodiche con i relativi ID.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -78,7 +78,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "leggi_storico_sessioni",
-            "description": "Legge le sessioni passate di un utente per ricavare contesto o controllare duplicati.",
+            "description": "Legge le sessioni passate di un utente per ricavare contesto. Restituisce anche l'id di ogni sessione per eventuali modifiche.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -93,7 +93,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "leggi_agenda",
-            "description": "Legge gli appuntamenti pianificati nel futuro (nella data specificata) per evitare sovrapposizioni o rispondere a domande sull'agenda.",
+            "description": "Legge gli appuntamenti pianificati nel futuro.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -122,14 +122,78 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "modifica_sessione_pianificata",
+            "description": "Modifica un appuntamento futuro in agenda senza doverlo cancellare e ricreare.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "Data_Attuale": {"type": "string", "description": "Data attuale dell'appuntamento (YYYY-MM-DD)"},
+                    "Utente": {"type": "string", "description": "Nome dell'utente"},
+                    "Nuova_Data": {"type": "string", "description": "(Opzionale) Nuova data"},
+                    "Nuova Ora Inizio": {"type": "string", "description": "(Opzionale) Nuova ora inizio HH:MM"},
+                    "Nuova Ora Fine": {"type": "string", "description": "(Opzionale) Nuova ora fine HH:MM"},
+                    "Nuovo_Luogo": {"type": "string", "description": "(Opzionale) Nuovo luogo"}
+                },
+                "required": ["Data_Attuale", "Utente"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "modifica_sessione_passata",
+            "description": "Corregge una sessione passata già registrata nel diario (e innesca la rigenerazione di Google Sheets).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id_sessione": {"type": "string", "description": "ID univoco della sessione (ottenibile con leggi_storico_sessioni)"},
+                    "Nuova_Data": {"type": "string", "description": "(Opzionale) Nuova data YYYY-MM-DD"},
+                    "Nuove_Ore": {"type": "number", "description": "(Opzionale) Nuove ore svolte"},
+                    "Nuove Attività": {"type": "string", "description": "(Opzionale) Nuovo testo attività"}
+                },
+                "required": ["id_sessione"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "elimina_sessione_passata",
+            "description": "Elimina una sessione passata registrata per errore (e innesca la rigenerazione di Google Sheets).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id_sessione": {"type": "string", "description": "ID univoco della sessione (ottenibile con leggi_storico_sessioni)"}
+                },
+                "required": ["id_sessione"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "modifica_utente",
-            "description": "Aggiorna i dati anagrafici di un utente esistente (ore settimanali o note).",
+            "description": "Aggiorna i dati generali di un utente esistente (ore settimanali o preferenze statiche).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "nome_utente": {"type": "string", "description": "Nome esatto dell'utente"},
-                    "ore_settimanali": {"type": "number", "description": "Nuove ore settimanali (opzionale se si vogliono cambiare solo le note)"},
-                    "note": {"type": "string", "description": "Nuove note da aggiungere (opzionale se si vogliono cambiare solo le ore)"}
+                    "ore_settimanali": {"type": "number", "description": "Nuove ore settimanali (opzionale)"},
+                    "preferenze": {"type": "string", "description": "Nuove preferenze statiche (opzionale)"}
+                },
+                "required": ["nome_utente"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "elimina_utente",
+            "description": "Elimina completamente un utente dal sistema.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nome_utente": {"type": "string", "description": "Nome esatto dell'utente"}
                 },
                 "required": ["nome_utente"]
             }
@@ -152,15 +216,46 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "salva_nota_utente",
-            "description": "Salva una preferenza qualitativa o un'informazione utile nel profilo di un utente. Usa questo tool per creare una 'memoria episodica' quando l'educatore menziona dettagli importanti.",
+            "name": "aggiungi_nota_utente",
+            "description": "Aggiunge una nuova nota episodica a un utente per tracciare progressi o avvenimenti.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "nome_utente": {"type": "string", "description": "Il nome dell'utente"},
-                    "nota_testuale": {"type": "string", "description": "L'informazione qualitativa da ricordare (es. 'Odia i rumori forti', 'La madre vuole messaggi solo su WhatsApp')"}
+                    "nota_testuale": {"type": "string", "description": "Il testo della nota"}
                 },
                 "required": ["nome_utente", "nota_testuale"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "modifica_nota_utente",
+            "description": "Sovrascrive una nota episodica esistente conoscendone l'ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nome_utente": {"type": "string", "description": "Il nome dell'utente"},
+                    "id_nota": {"type": "number", "description": "L'ID della nota (ottenuto da cerca_utenti)"},
+                    "nuovo_testo": {"type": "string", "description": "Il nuovo testo della nota"}
+                },
+                "required": ["nome_utente", "id_nota", "nuovo_testo"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "elimina_nota_utente",
+            "description": "Elimina definitivamente una nota episodica esistente conoscendone l'ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nome_utente": {"type": "string", "description": "Il nome dell'utente"},
+                    "id_nota": {"type": "number", "description": "L'ID della nota (ottenuto da cerca_utenti)"}
+                },
+                "required": ["nome_utente", "id_nota"]
             }
         }
     }
