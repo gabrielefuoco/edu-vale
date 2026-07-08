@@ -4,6 +4,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from langchain_core.messages import HumanMessage
 from services.ai_service import transcribe_audio
 from utils.logger import db_log
+from utils.helpers import invoke_with_backoff
 from bot.main_registry import AGENT_REGISTRY, _processing_locks
 from database.connection import get_system_config
 import os
@@ -85,9 +86,14 @@ async def route_message(message: Message):
             # LangGraph can keep it in state, but to ensure up-to-date data, we rely on the node logic.
             # Here we just pass the human message. The memory manager or agent node handles system prompt.
             
-            result = await agent_config["graph"].ainvoke(
+            async def send_msg(text):
+                await message.reply(text, parse_mode="HTML")
+                
+            result = await invoke_with_backoff(
+                agent_config["graph"],
                 {"messages": [HumanMessage(content=text)]},
-                config=config,
+                config,
+                send_msg
             )
             
             # Controlla se il grafo è interrotto (aspetta conferma per i write_tools)

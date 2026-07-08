@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from langchain_core.messages import ToolMessage
 from bot.main_registry import AGENT_REGISTRY, _processing_locks
+from utils.helpers import invoke_with_backoff
 
 router = Router()
 
@@ -24,7 +25,15 @@ async def confirm_tools(callback: CallbackQuery):
     async with _processing_locks[thread_key]:
         try:
             # Riprendi l'esecuzione (valore None fa riprendere dal punto di interrupt)
-            result = await agent_config["graph"].ainvoke(None, config=config)
+            async def send_msg(text):
+                await callback.message.answer(text, parse_mode="HTML")
+                
+            result = await invoke_with_backoff(
+                agent_config["graph"],
+                None,
+                config,
+                send_msg
+            )
             state = await agent_config["graph"].aget_state(config)
             if state.next and "write_tools" in state.next:
                 pass # Continua ad aspettare conferme (non dovrebbe succedere se abbiamo eseguito tutti i tool)
