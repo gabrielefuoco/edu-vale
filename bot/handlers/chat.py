@@ -90,42 +90,52 @@ async def get_system_prompt() -> dict:
 @router.message((F.text & ~F.text.startswith("/")) | F.voice)
 async def chat_handler(message: Message, state: FSMContext):
     data = await state.get_data()
-    messages = data.get("messages", [])
     
-    if not messages:
-        messages = [await get_system_prompt()]
-    
-    # Auto-summarize if context grows too large (e.g. > 30000 chars)
-    total_chars = sum(len(m.get("content", "")) for m in messages if m.get("content"))
-    if total_chars > 30000:
-        await message.bot.send_chat_action(message.chat.id, "typing")
-        summary_messages = await summarize_context(messages)
-        messages = [await get_system_prompt()] + summary_messages
-    
-    # Handle voice messages
-    if message.voice:
-        await message.bot.send_chat_action(message.chat.id, "typing")
-        file = await message.bot.get_file(message.voice.file_id)
-        file_path = f"tmp_{message.voice.file_id}.ogg"
-        await message.bot.download_file(file.file_path, file_path)
+    if data.get("is_processing"):
+        await message.answer("⏳ Un attimo, sto ancora finendo di elaborare la tua richiesta precedente...")
+        return
         
-        from services.ai_service import transcribe_audio
-        import os
-        transcribed_text = await transcribe_audio(file_path)
-        os.remove(file_path)
+    await state.update_data(is_processing=True)
+    
+    try:
+        messages = data.get("messages", [])
         
-        await message.answer(f"🎙️ <b>Trascrizione (Groq Whisper):</b>\n<i>{transcribed_text}</i>", parse_mode="HTML")
-        user_input = transcribed_text
-    else:
-        user_input = message.text
+        if not messages:
+            messages = [await get_system_prompt()]
+        
+        # Auto-summarize if context grows too large (e.g. > 30000 chars)
+        total_chars = sum(len(m.get("content", "")) for m in messages if m.get("content"))
+        if total_chars > 30000:
+            await message.bot.send_chat_action(message.chat.id, "typing")
+            summary_messages = await summarize_context(messages)
+            messages = [await get_system_prompt()] + summary_messages
+        
+        # Handle voice messages
+        if message.voice:
+            await message.bot.send_chat_action(message.chat.id, "typing")
+            file = await message.bot.get_file(message.voice.file_id)
+            file_path = f"tmp_{message.voice.file_id}.ogg"
+            await message.bot.download_file(file.file_path, file_path)
+            
+            from services.ai_service import transcribe_audio
+            import os
+            transcribed_text = await transcribe_audio(file_path)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            
+            await message.answer(f"🎙️ <b>Trascrizione (Groq Whisper):</b>\n<i>{transcribed_text}</i>", parse_mode="HTML")
+            user_input = transcribed_text
+        else:
+            user_input = message.text
+    
+        # Append user message
+        messages.append({"role": "user", "content": user_input})
+        await message.bot.send_chat_action(message.chat.id, "typing")
+        
+        MAX_LOOP = 5
+        loop_count = 0
+        pending_write_tools = []
 
-    # Append user message
-    messages.append({"role": "user", "content": user_input})
-    await message.bot.send_chat_action(message.chat.id, "typing")
-    
-    MAX_LOOP = 5
-    loop_count = 0
-    pending_write_tools = []
     
     while loop_count < MAX_LOOP:
         loop_count += 1
@@ -264,6 +274,9 @@ async def chat_handler(message: Message, state: FSMContext):
         
         await message.answer(format_for_telegram(testo_azioni), reply_markup=markup, parse_mode="HTML")
         return
+
+    finally:
+        await state.update_data(is_processing=False)
 
 @router.callback_query(F.data == "confirm_all")
 async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):

@@ -8,6 +8,20 @@ SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
 
 def get_spreadsheet():
+    # Prima proviamo a leggere le credenziali da una variabile d'ambiente JSON (ideale per Render/Cloud)
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        import json
+        try:
+            creds_dict = json.loads(creds_json)
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+            client = gspread.authorize(creds)
+            return client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
+        except Exception as e:
+            print(f"Errore caricamento credenziali JSON: {e}")
+            return None
+
+    # Fallback al file locale se la variabile d'ambiente non c'è
     creds_file = os.getenv("GOOGLE_SHEETS_CREDENTIALS_FILE")
     if not creds_file:
         return None
