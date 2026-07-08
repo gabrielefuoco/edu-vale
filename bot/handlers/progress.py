@@ -14,13 +14,14 @@ async def cmd_progressi(message: Message):
     
     nome = args[1]
     col = await get_collection("diario_sessioni")
-    sessioni = await col.find({"parsed.Utente": nome}).to_list(length=50)
+    sessioni = await col.find({"utente_id": nome}).to_list(length=50)
     
     if not sessioni:
         return await message.answer(f"Nessuna sessione trovata per {nome}.")
     
     await message.answer("Elaborazione del riassunto in corso...")
-    texts = [s.get("testo", "") for s in sessioni]
+    texts = [s.get("testo_riassunto", "") for s in sessioni]
     riassunto = await summarize_progress(texts, nome)
     
     await message.answer(f"📈 **Progressi di {nome}**:\n\n{riassunto}")
+

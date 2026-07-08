@@ -11,7 +11,11 @@ from dotenv import load_dotenv
 
 from bot.middlewares import AuthMiddleware
 from bot.scheduler import setup_scheduler
-from bot.handlers import commands, fsm_wizards, progress, chat
+from bot.handlers import commands, progress, router as topic_router, callbacks
+from bot.main_registry import AGENT_REGISTRY
+from database.connection import get_checkpointer
+from agents.segretario import create_segretario
+from agents.diario import create_diario_agent
 from utils.logger import logger
 
 load_dotenv()
@@ -62,7 +66,7 @@ async def api_get_sessions(request):
     db = client[f"edu_agent_{user_id}"]
     col = db["diario_sessioni"]
     
-    sessions = await col.find().sort("parsed.Giorno", -1).to_list(length=100)
+    sessions = await col.find().sort("data", -1).to_list(length=100)
     
     for s in sessions:
         s["_id"] = str(s["_id"])
@@ -97,11 +101,11 @@ async def api_update_session(request):
     try:
         obj_id = ObjectId(session_id)
         update_data = {
-            "parsed.Giorno": body.get("Giorno"),
-            "parsed.Ore": body.get("Ore"),
-            "parsed.Utente": body.get("Utente"),
-            "parsed.Luogo": body.get("Luogo"),
-            "parsed.Attività svolte": body.get("Attività svolte")
+            "data": body.get("Giorno"),
+            "ore_svolte": body.get("Ore"),
+            "utente_id": body.get("Utente"),
+            "luogo": body.get("Luogo"),
+            "testo_riassunto": body.get("Attività svolte")
         }
         update_data = {k: v for k, v in update_data.items() if v is not None}
         
@@ -143,11 +147,42 @@ async def main():
     # Middleware
     dp.message.middleware(AuthMiddleware())
     
+    # Setup LangGraph Agents and Registry
+    checkpointer = await get_checkpointer()
+    segretario = create_segretario(checkpointer)
+    diario = create_diario_agent(checkpointer)
+    
+    # Registry population
+    AGENT_REGISTRY[None] = segretario
+    
+    tg_group_id = os.getenv("TELEGRAM_GROUP_ID")
+    segreteria_topic_id = os.getenv("SEGRETERIA_TOPIC_ID")
+    diario_topic_id = os.getenv("DIARIO_TOPIC_ID")
+    
+    if tg_group_id:
+        try:
+            # Opzionale: Auto-creazione dei topic se non impostati nell'.env
+            if not segreteria_topic_id:
+                topic = await bot.create_forum_topic(chat_id=tg_group_id, name="📅 Segreteria Operativa")
+                segreteria_topic_id = topic.message_thread_id
+                logger.info(f"Topic Segreteria creato con ID: {segreteria_topic_id}")
+            if not diario_topic_id:
+                topic = await bot.create_forum_topic(chat_id=tg_group_id, name="📝 Diari di Bordo")
+                diario_topic_id = topic.message_thread_id
+                logger.info(f"Topic Diari creato con ID: {diario_topic_id}")
+        except Exception as e:
+            logger.error(f"Impossibile creare i topic automaticamente: {e}")
+            
+    if segreteria_topic_id:
+        AGENT_REGISTRY[int(segreteria_topic_id)] = segretario
+    if diario_topic_id:
+        AGENT_REGISTRY[int(diario_topic_id)] = diario
+    
     # Routers
     dp.include_router(commands.router)
-    dp.include_router(fsm_wizards.router)
     dp.include_router(progress.router)
-    dp.include_router(chat.router)  # Must be last as fallback
+    dp.include_router(callbacks.router)
+    dp.include_router(topic_router.router)
     
     # Setup Scheduler
     setup_scheduler(bot)
@@ -159,25 +194,13 @@ async def main():
         BotCommand(command="utenti", description="Mostra gli utenti in carico"),
         BotCommand(command="esporta", description="Esporta i dati (Excel)"),
         BotCommand(command="log", description="Esporta e azzera i log di sistema"),
-        BotCommand(command="reset", description="Azzera la memoria della chat"),
+        BotCommand(command="reset", description="Azzera la memoria del topic"),
         BotCommand(command="nuke", description="[TEST] Resetta tutto il DB")
     ]
     await bot.set_my_commands(commands_list)
     
-    # Imposta la descrizione di benvenuto (mostrata all'utente prima dell'avvio)
-    await bot.set_my_description(
-        "Ciao! Sono Edu-Agent, il tuo assistente operativo per la gestione delle attività educative. 📊\n\n"
-        "Posso aiutarti a:\n"
-        "- 📝 Registrare sessioni svolte ed esportarle automaticamente su Fogli Google.\n"
-        "- 📅 Pianificare appuntamenti futuri e gestire la tua agenda.\n"
-        "- 👥 Memorizzare informazioni, note e preferenze degli utenti in carico.\n\n"
-        "Inviami un vocale o un messaggio di testo per iniziare a lavorare insieme! 🎙️"
-    )
-    
-    # Imposta la descrizione breve (visibile sul profilo)
-    await bot.set_my_short_description(
-        "Assistente IA per la gestione operativa di sessioni, agenda e note educative."
-    )
+    await bot.set_my_description("Assistente IA Multi-Agente per la gestione delle attività educative.")
+    await bot.set_my_short_description("Gestione operativa e stesura diari educativi.")
     
     # Avvia il server web per API e TMA
     await start_web_server()

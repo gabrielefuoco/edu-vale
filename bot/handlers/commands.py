@@ -2,7 +2,6 @@ import os
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
-from aiogram.fsm.context import FSMContext
 from database.connection import get_collection
 
 router = Router()
@@ -64,16 +63,14 @@ async def cmd_aiuto(message: Message):
 
 
 @router.message(Command("reset"))
-async def cmd_reset(message: Message, state: FSMContext):
-    await state.clear()
-    col = await get_collection("chat_history")
-    await col.delete_many({"user_id": message.from_user.id})
-    await message.answer("🔄 Memoria della chat azzerata! L'agente ha dimenticato il contesto recente e ripartirà da zero.")
+async def cmd_reset(message: Message):
+    col = await get_collection("checkpoints")
+    thread_id = f"{message.from_user.id}_{message.message_thread_id}"
+    await col.delete_many({"thread_id": thread_id})
+    await message.answer("🔄 Memoria del topic azzerata! L'agente ha dimenticato il contesto recente e ripartirà da zero.")
 
 @router.message(Command("nuke"))
-async def cmd_nuke(message: Message, state: FSMContext):
-    await state.clear()
-    
+async def cmd_nuke(message: Message):
     # Reset DB
     col = await get_collection("chat_history")
     await col.delete_many({})
@@ -83,12 +80,17 @@ async def cmd_nuke(message: Message, state: FSMContext):
     await col.delete_many({})
     col = await get_collection("diario_sessioni")
     await col.delete_many({})
+    col = await get_collection("diari_bordo")
+    await col.delete_many({})
+    col = await get_collection("checkpoints")
+    await col.delete_many({})
+    col = await get_collection("checkpoint_writes")
+    await col.delete_many({})
     
-    await message.answer("💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione e Sessioni azzerati per questo account.")
+    await message.answer("💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione, Sessioni, Diari e Checkpoint azzerati.")
 
 @router.message(Command("annulla"))
-async def cmd_annulla(message: Message, state: FSMContext):
-    await state.clear()
+async def cmd_annulla(message: Message):
     await message.answer("Operazione annullata.")
 
 @router.message(Command("utenti"))
@@ -104,29 +106,20 @@ from aiogram.types import FSInputFile
 from services.export_service import export_sessions_to_excel
 from services.calendar_service import generate_ics_file
 
-from aiogram.fsm.context import FSMContext
-
 @router.message(Command("esporta"))
-async def cmd_esporta(message: Message, state: FSMContext):
+async def cmd_esporta(message: Message):
     await message.answer("Sto generando il tuo Excel, un attimo di pazienza...")
     user_id = str(message.from_user.id)
     file_path = await export_sessions_to_excel(user_id=user_id)
     doc = FSInputFile(file_path)
     await message.answer_document(doc, caption="Ecco il tuo file Excel aggiornato!")
     os.remove(file_path)
-    
-    # Inject context
-    data = await state.get_data()
-    messages = data.get("messages", [])
-    messages.append({"role": "system", "content": "L'utente ha esportato con successo il database in Excel."})
-    await state.update_data(messages=messages)
 
 @router.message(Command("oggi"))
-async def cmd_oggi(message: Message, state: FSMContext):
+async def cmd_oggi(message: Message):
     oggi = datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
     col = await get_collection("programmazione")
-    # Finding sessions where "Data" matches today
-    sessioni = await col.find({"Data": oggi}).to_list(length=20)
+    sessioni = await col.find({"data": oggi}).to_list(length=20)
     
     if not sessioni:
         return await message.answer("Non hai sessioni programmate per oggi.")
@@ -135,10 +128,10 @@ async def cmd_oggi(message: Message, state: FSMContext):
     files_to_send = []
     
     for s in sessioni:
-        utente = s.get("Utente", "Sconosciuto")
-        inizio = s.get("Ora Inizio", "")
-        fine = s.get("Ora Fine", "")
-        luogo = s.get("Luogo", "")
+        utente = s.get("utente_id", "Sconosciuto")
+        inizio = s.get("ora_inizio", "")
+        fine = s.get("ora_fine", "")
+        luogo = s.get("luogo", "")
         
         riepilogo += f"🔹 **{utente}** | {inizio} - {fine} | 📍 {luogo}\n"
         
@@ -152,12 +145,6 @@ async def cmd_oggi(message: Message, state: FSMContext):
         doc = FSInputFile(ics)
         await message.answer_document(doc)
         os.remove(ics)
-        
-    # Inject context
-    data = await state.get_data()
-    messages = data.get("messages", [])
-    messages.append({"role": "system", "content": f"Il bot ha appena mostrato l'agenda di oggi. Eventi: {sessioni}"})
-    await state.update_data(messages=messages)
 
 @router.message(Command("log"))
 async def cmd_log(message: Message):

@@ -14,7 +14,7 @@ async def export_sessions_to_excel(user_id: str, filename: str = None) -> str:
     filepath = os.path.abspath(os.path.join(os.getcwd(), filename))
     
     col = await get_collection("diario_sessioni")
-    sessions = await col.find().sort("parsed.Giorno", 1).to_list(length=2000)
+    sessions = await col.find().sort("data", 1).to_list(length=2000)
     
     wb = Workbook()
     ws = wb.active
@@ -30,13 +30,12 @@ async def export_sessions_to_excel(user_id: str, filename: str = None) -> str:
         
     # Dati
     for s in sessions:
-        parsed = s.get("parsed", {})
         ws.append([
-            parsed.get("Giorno", ""),
-            parsed.get("Ore", ""),
-            parsed.get("Utente", ""),
-            parsed.get("Luogo", ""),
-            parsed.get("Attività svolte", "")
+            s.get("data", ""),
+            s.get("ore_svolte", ""),
+            s.get("utente_id", ""),
+            s.get("luogo", ""),
+            s.get("testo_riassunto", "")
         ])
         
     # Auto-resize colonne base
@@ -46,3 +45,4 @@ async def export_sessions_to_excel(user_id: str, filename: str = None) -> str:
         
     wb.save(filepath)
     return filepath
+

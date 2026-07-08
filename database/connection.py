@@ -2,6 +2,7 @@ import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from bot.middlewares import current_user_id
+from langgraph.checkpoint.mongodb import MongoDBSaver as AsyncMongoDBSaver
 
 load_dotenv()
 
@@ -22,3 +23,7 @@ async def get_db():
 async def get_collection(name: str):
     database = await get_db()
     return database[name]
+
+async def get_checkpointer():
+    """Restituisce il checkpointer MongoDB condiviso."""
+    return AsyncMongoDBSaver(client, db_name="edu_agent_checkpoints")
