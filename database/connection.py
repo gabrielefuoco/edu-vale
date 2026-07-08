@@ -33,3 +33,20 @@ sync_client = MongoClient(MONGO_URI) if MONGO_URI else None
 async def get_checkpointer():
     """Restituisce il checkpointer MongoDB condiviso."""
     return MongoDBSaver(sync_client, db_name="edu_agent_checkpoints")
+
+async def get_system_config():
+    """Recupera la configurazione di sistema (es. ID dei topic Telegram)."""
+    if client is None: return {}
+    db = client["edu_agent_system"]
+    config = await db["config"].find_one({"_id": "telegram_setup"})
+    return config or {}
+
+async def save_system_config(config_data: dict):
+    """Salva la configurazione di sistema."""
+    if client is None: return
+    db = client["edu_agent_system"]
+    await db["config"].update_one(
+        {"_id": "telegram_setup"}, 
+        {"$set": config_data}, 
+        upsert=True
+    )

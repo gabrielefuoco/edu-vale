@@ -13,7 +13,7 @@ from bot.middlewares import AuthMiddleware
 from bot.scheduler import setup_scheduler
 from bot.handlers import commands, progress, router as topic_router, callbacks
 from bot.main_registry import AGENT_REGISTRY
-from database.connection import get_checkpointer
+from database.connection import get_checkpointer, get_system_config
 from agents.segretario import create_segretario
 from agents.diario import create_diario_agent
 from utils.logger import logger
@@ -154,24 +154,14 @@ async def main():
     
     # Registry population
     AGENT_REGISTRY[None] = segretario
+    AGENT_REGISTRY["segretario"] = segretario
+    AGENT_REGISTRY["diario"] = diario
     
-    tg_group_id = os.getenv("TELEGRAM_GROUP_ID")
-    segreteria_topic_id = os.getenv("SEGRETERIA_TOPIC_ID")
-    diario_topic_id = os.getenv("DIARIO_TOPIC_ID")
+    sys_config = await get_system_config()
     
-    if tg_group_id:
-        try:
-            # Opzionale: Auto-creazione dei topic se non impostati nell'.env
-            if not segreteria_topic_id:
-                topic = await bot.create_forum_topic(chat_id=tg_group_id, name="📅 Segreteria Operativa")
-                segreteria_topic_id = topic.message_thread_id
-                logger.info(f"Topic Segreteria creato con ID: {segreteria_topic_id}")
-            if not diario_topic_id:
-                topic = await bot.create_forum_topic(chat_id=tg_group_id, name="📝 Diari di Bordo")
-                diario_topic_id = topic.message_thread_id
-                logger.info(f"Topic Diari creato con ID: {diario_topic_id}")
-        except Exception as e:
-            logger.error(f"Impossibile creare i topic automaticamente: {e}")
+    tg_group_id = sys_config.get("group_id") or os.getenv("TELEGRAM_GROUP_ID")
+    segreteria_topic_id = sys_config.get("segreteria_id") or os.getenv("SEGRETERIA_TOPIC_ID")
+    diario_topic_id = sys_config.get("diario_id") or os.getenv("DIARIO_TOPIC_ID")
             
     if segreteria_topic_id:
         AGENT_REGISTRY[int(segreteria_topic_id)] = segretario

@@ -2,7 +2,9 @@ import os
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
-from database.connection import get_collection
+from database.connection import get_collection, get_system_config, save_system_config
+from bot.main_registry import AGENT_REGISTRY
+from utils.logger import logger
 
 router = Router()
 
@@ -26,6 +28,66 @@ async def cmd_start(message: Message):
         "Clicca il bottone qui sotto per visualizzare e modificare le tue sessioni.",
         reply_markup=keyboard
     )
+
+@router.message(Command("setup"))
+async def cmd_setup(message: Message):
+    user_id = str(message.from_user.id)
+    allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
+    allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
+    
+    if user_id not in allowed_ids:
+        return await message.answer("❌ Non sei autorizzato a eseguire il setup.")
+        
+    if message.chat.type not in ["group", "supergroup"]:
+        return await message.answer("⚠️ Questo comando deve essere eseguito all'interno di un Gruppo Telegram.")
+        
+    group_id = message.chat.id
+    
+    await message.answer("⚙️ Inizializzazione in corso... Controllo i permessi e creo i topic.")
+    
+    try:
+        topic_seg = await message.bot.create_forum_topic(chat_id=group_id, name="📅 Segreteria Operativa")
+        topic_diar = await message.bot.create_forum_topic(chat_id=group_id, name="📝 Diari di Bordo")
+        
+        seg_id = topic_seg.message_thread_id
+        diar_id = topic_diar.message_thread_id
+        
+        # Salva su DB
+        config_data = {
+            "group_id": group_id,
+            "segreteria_id": seg_id,
+            "diario_id": diar_id
+        }
+        await save_system_config(config_data)
+        
+        # Aggiorna il registry in memoria
+        if "segretario" in AGENT_REGISTRY:
+            AGENT_REGISTRY[seg_id] = AGENT_REGISTRY["segretario"]
+        if "diario" in AGENT_REGISTRY:
+            AGENT_REGISTRY[diar_id] = AGENT_REGISTRY["diario"]
+            
+        await message.answer(
+            f"✅ **Setup Completato con Successo!**\n\n"
+            f"Sono stati creati i topic necessari e il bot è ora pienamente operativo in questo gruppo.\n"
+            f"- ID Gruppo: `{group_id}`\n"
+            f"- Topic Segreteria: `{seg_id}`\n"
+            f"- Topic Diario: `{diar_id}`\n\n"
+            f"Le impostazioni sono state salvate nel database. Non hai più bisogno di modificare il file `.env`!",
+            parse_mode="Markdown"
+        )
+        logger.info(f"Setup completato da {user_id}. Nuovi topic creati: Segreteria={seg_id}, Diario={diar_id}")
+        
+    except Exception as e:
+        logger.error(f"Errore durante il /setup: {e}")
+        await message.answer(
+            f"❌ **Errore durante la creazione dei topic.**\n\n"
+            f"Dettaglio errore: `{e}`\n\n"
+            f"⚠️ **Verifica che:**\n"
+            f"1. Il gruppo abbia la modalità 'Argomenti' (Forum) abilitata.\n"
+            f"2. Il bot sia stato nominato Amministratore.\n"
+            f"3. Il bot abbia il permesso 'Gestisci argomenti' (Manage Topics).",
+            parse_mode="Markdown"
+        )
 
 @router.message(Command("aiuto"))
 async def cmd_aiuto(message: Message):
