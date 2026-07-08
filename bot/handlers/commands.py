@@ -60,6 +60,28 @@ async def cmd_setup(message: Message):
         }
         await save_system_config(config_data)
         
+        # Invia i messaggi di benvenuto nei topic per inizializzarli visivamente
+        await message.bot.send_message(
+            chat_id=group_id, 
+            text="👋 **Benvenuto nella Segreteria Operativa!**\n\nQui puoi chiedermi di registrare sessioni, aggiungere utenti, pianificare l'agenda o interrogare il database.\nScrivi un messaggio o invia un vocale per iniziare!", 
+            message_thread_id=seg_id,
+            parse_mode="Markdown"
+        )
+        
+        await message.bot.send_message(
+            chat_id=group_id, 
+            text="📝 **Benvenuto nei Diari di Bordo!**\n\nQui puoi dettarmi i resoconti delle tue sessioni educative e io li formatterò in modo professionale, salvando eventuali note comportamentali.\nScrivi o invia un vocale per iniziare!", 
+            message_thread_id=diar_id,
+            parse_mode="Markdown"
+        )
+        
+        # Prova a nascondere e chiudere il topic Generale (potrebbe fallire se Telegram non lo permette in certi casi)
+        try:
+            await message.bot.close_general_forum_topic(chat_id=group_id)
+            await message.bot.hide_general_forum_topic(chat_id=group_id)
+        except Exception as ex:
+            logger.warning(f"Impossibile nascondere il topic Generale: {ex}")
+            
         # Aggiorna il registry in memoria
         if "segretario" in AGENT_REGISTRY:
             AGENT_REGISTRY[seg_id] = AGENT_REGISTRY["segretario"]

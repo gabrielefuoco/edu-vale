@@ -179,6 +179,7 @@ async def main():
     
     # Setup Telegram Menu Commands
     commands_list = [
+        BotCommand(command="setup", description="Inizializza i topic nel gruppo"),
         BotCommand(command="aiuto", description="Mostra la lista dei comandi"),
         BotCommand(command="oggi", description="Mostra l'agenda di oggi"),
         BotCommand(command="utenti", description="Mostra gli utenti in carico"),
