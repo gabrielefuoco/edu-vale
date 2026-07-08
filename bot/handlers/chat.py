@@ -2,7 +2,6 @@ import json
 import io
 import csv
 import re
-import csv
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import List
@@ -22,6 +21,7 @@ from aiogram.fsm.context import FSMContext
 from database.connection import get_collection
 from services.ai_agent import chat_with_agent, summarize_context
 from services.sheets_service import append_session_to_sheet
+from utils.logger import db_log
 
 TOOL_MODELS = {
     "registra_sessione": ToolRegistraSessione,
@@ -37,18 +37,23 @@ TOOL_MODELS = {
 }
 
 def format_for_telegram(text: str) -> str:
-    """Converte la sintassi Markdown di base nell'HTML di Telegram."""
-    # Sostituisce **testo** con <b>testo</b>
-    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
-    # Sostituisce _testo_ con <i>testo</i> (opzionale)
-    text = re.sub(r'_(.*?)_', r'<i>\1</i>', text)
-    
-    # Assicurati di sfuggire i caratteri speciali HTML <, >, & se Mistral li genera
+    """Converte la sintassi Markdown di base nell'HTML di Telegram.
+    Ordine corretto: escape HTML prima, poi converti markdown in tag HTML.
+    """
+    # 1. Escape dei caratteri speciali HTML che Mistral potrebbe generare
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     
-    # Ripristina i tag HTML che abbiamo appena sfuggito
-    text = text.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
-    text = text.replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
+    # 2. Converti markdown in tag HTML (operando sul testo già escaped)
+    # **testo** -> <b>testo</b>
+    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+    # *testo* -> <b>testo</b>
+    text = re.sub(r'\*(.*?)\*', r'<b>\1</b>', text)
+    # _testo_ -> <i>testo</i>  (solo se non preceduto/seguito da altra _)
+    text = re.sub(r'(?<!_)_([^_]+)_(?!_)', r'<i>\1</i>', text)
+    # ### Titolo -> <b>Titolo</b>
+    text = re.sub(r'^#{1,3}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
+    # `codice` -> <code>codice</code>
+    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
     
     return text
 
@@ -128,6 +133,13 @@ async def chat_handler(message: Message, state: FSMContext):
         else:
             user_input = message.text
     
+        # Log user message
+        await db_log("INFO", "chat", f"Messaggio utente ricevuto", {
+            "user_id": message.from_user.id,
+            "username": message.from_user.username,
+            "text": user_input[:500]  # tronca a 500 char per non appesantire
+        })
+        
         # Append user message
         messages.append({"role": "user", "content": user_input})
         await message.bot.send_chat_action(message.chat.id, "typing")
@@ -151,6 +163,11 @@ async def chat_handler(message: Message, state: FSMContext):
                         await message.answer(testo_pulito, parse_mode="HTML")
                     except Exception as e:
                         await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
+                    # Log bot response
+                    await db_log("INFO", "chat", "Risposta bot inviata", {
+                        "user_id": message.from_user.id,
+                        "text": (bot_msg.content or "")[:500]
+                    })
                 if not pending_write_tools:
                     return
                 break
