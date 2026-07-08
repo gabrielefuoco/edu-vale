@@ -2,6 +2,8 @@ import os
 import json
 from mistralai.async_client import MistralAsyncClient
 from mistralai.models.chat_completion import ChatMessage, ToolCall
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 mistral_client = MistralAsyncClient(api_key=os.getenv("MISTRAL_API_KEY"))
 
@@ -165,6 +167,8 @@ TOOLS = [
 ]
 
 
+from utils.logger import db_log
+
 async def chat_with_agent(messages: list[dict]) -> tuple[ChatMessage, list[ToolCall]]:
     formatted_messages = []
     for m in messages:
@@ -186,17 +190,26 @@ async def chat_with_agent(messages: list[dict]) -> tuple[ChatMessage, list[ToolC
             
         formatted_messages.append(ChatMessage(**kwargs))
     
-    response = await mistral_client.chat(
-        model="mistral-large-latest", # large is better for tool calling
-        messages=formatted_messages,
-        tools=TOOLS,
-        tool_choice="auto"
-    )
-    
-    message = response.choices[0].message
-    tool_calls = message.tool_calls if hasattr(message, 'tool_calls') and message.tool_calls else []
-    
-    return message, tool_calls
+    start_time = datetime.now(ZoneInfo("Europe/Rome"))
+    try:
+        response = await mistral_client.chat(
+            model="mistral-large-latest", # large is better for tool calling
+            messages=formatted_messages,
+            tools=TOOLS,
+            tool_choice="auto"
+        )
+        duration = (datetime.now(ZoneInfo("Europe/Rome")) - start_time).total_seconds()
+        
+        message = response.choices[0].message
+        tool_calls = message.tool_calls if hasattr(message, 'tool_calls') and message.tool_calls else []
+        
+        tool_names = [tc.function.name for tc in tool_calls] if tool_calls else []
+        await db_log("INFO", "ai_agent", f"Chiamata Mistral completata in {duration:.2f}s", {"tools": tool_names})
+        
+        return message, tool_calls
+    except Exception as e:
+        await db_log("ERROR", "ai_agent", f"Errore API Mistral: {e}")
+        raise e
 
 async def summarize_context(messages: list[dict]) -> list[dict]:
     context_lines = []

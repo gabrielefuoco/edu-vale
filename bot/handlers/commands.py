@@ -131,3 +131,37 @@ async def cmd_oggi(message: Message, state: FSMContext):
     messages.append({"role": "system", "content": f"Il bot ha appena mostrato l'agenda di oggi. Eventi: {sessioni}"})
     await state.update_data(messages=messages)
 
+@router.message(Command("log"))
+async def cmd_log(message: Message):
+    await message.answer("Recupero i log dal database, attendi...")
+    col = await get_collection("system_logs")
+    logs = await col.find().sort("timestamp", 1).to_list(length=None)
+    
+    if not logs:
+        return await message.answer("Nessun log presente nel database.")
+        
+    file_path = "system_logs_export.txt"
+    with open(file_path, "w", encoding="utf-8") as f:
+        for log in logs:
+            ts = log.get("timestamp")
+            if ts:
+                ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                ts_str = "N/A"
+            lvl = log.get("level", "INFO")
+            mod = log.get("module", "unknown")
+            msg = log.get("message", "")
+            f.write(f"[{ts_str}] {lvl} [{mod}] - {msg}\n")
+            
+            details = log.get("details")
+            if details:
+                f.write(f"  Details: {details}\n")
+                
+    doc = FSInputFile(file_path)
+    await message.answer_document(doc, caption="Ecco tutti i log registrati. Ora verranno cancellati dal database.")
+    
+    os.remove(file_path)
+    
+    # Cancella i log dal db
+    await col.delete_many({})
+    await message.answer("✅ Tutti i log sono stati eliminati dal database.")

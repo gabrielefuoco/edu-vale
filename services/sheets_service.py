@@ -79,11 +79,18 @@ def _sync_append_session_to_sheet(data: dict):
     ])
     return True, "Sessione registrata nel DB e nel Foglio Google."
 
+from utils.logger import db_log
+
 async def append_session_to_sheet(data: dict):
     try:
         success, message = await asyncio.to_thread(_sync_append_session_to_sheet, data)
+        if success:
+            await db_log("INFO", "sheets_service", f"Sessione salvata su Fogli Google", {"utente": data.get("Utente")})
+        else:
+            await db_log("ERROR", "sheets_service", f"Errore logico Fogli Google: {message}")
         return success, message
     except Exception as e:
+        await db_log("ERROR", "sheets_service", f"Eccezione Fogli Google: {e}")
         return False, f"Errore salvataggio Google Sheets: {str(e)}"
 
 def _sync_clear_all_sheets():

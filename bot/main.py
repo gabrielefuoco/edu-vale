@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from bot.middlewares import AuthMiddleware
 from bot.scheduler import setup_scheduler
 from bot.handlers import commands, fsm_wizards, progress, chat
+from utils.logger import logger
 
 load_dotenv()
 
@@ -26,12 +27,12 @@ async def start_dummy_server():
     port = int(os.getenv("PORT", 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"Dummy web server running on port {port} to satisfy Render health checks.")
+    logger.info(f"Dummy web server running on port {port} to satisfy Render health checks.")
 
 async def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
-        print("Errore: TELEGRAM_BOT_TOKEN non impostato.")
+        logger.error("TELEGRAM_BOT_TOKEN non impostato.")
         return
     
     bot = Bot(token=token)
@@ -56,6 +57,7 @@ async def main():
         BotCommand(command="utenti", description="Mostra gli utenti in carico"),
         BotCommand(command="foglio", description="Link al Foglio Google"),
         BotCommand(command="esporta", description="Esporta i dati (PDF/Excel)"),
+        BotCommand(command="log", description="Esporta e azzera i log di sistema"),
         BotCommand(command="reset", description="Azzera la memoria della chat"),
         BotCommand(command="nuke", description="[TEST] Resetta tutto il DB e i Fogli")
     ]
@@ -64,7 +66,7 @@ async def main():
     # Avvia il server web fittizio per Render
     await start_dummy_server()
     
-    print("Bot avviato!")
+    logger.info("Bot avviato!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
