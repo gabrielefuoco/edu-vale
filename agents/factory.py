@@ -5,6 +5,9 @@ from langchain_mistralai import ChatMistralAI
 from agents.state import AgentState
 from agents.rate_limiter import InMemoryRateLimiter
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from database.connection import get_collection
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 def create_agent(
     agent_name: str,
@@ -40,19 +43,32 @@ def create_agent(
         return {}
 
     # 2. LLM Node
-    async def call_model(state: AgentState):
-        # Il prompt deve essere costantemente aggiornato dal builder
-        messages = state["messages"]
-        # Inietteremo il system_prompt a runtime prima di passarlo al modello se serve
-        # ma è preferibile avere un message "SystemMessage" inserito dall'handler principale
+    async def call_model(state: AgentState, config):
+        messages = list(state["messages"]) # Creiamo una copia per sicurezza
         
-        # Fallback meccanico
-        if state.get("pydantic_error_count", 0) >= 3:
-            return {
-                "messages": [AIMessage(content="Scusa, sto riscontrando continui problemi tecnici con la formattazione dei dati. Potresti riformulare la tua richiesta o darmi i dati in modo più esplicito?")],
-                "pydantic_error_count": 0
-            }
+        # 1. Recuperiamo i dati freschi dal DB per costruire il System Prompt
+        if agent_name == "segretario":
+            col_utenti = await get_collection("utenti")
+            col_prog = await get_collection("programmazione")
+            oggi = datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
             
+            utenti_list = await col_utenti.find().to_list(100)
+            agenda_list = await col_prog.find({"data": oggi}).to_list(50)
+            
+            sys_text = system_prompt_builder(utenti_list, agenda_list)
+        else:
+            # Per l'agente 'diario' non passiamo argomenti al builder
+            sys_text = system_prompt_builder()
+            
+        sys_msg = SystemMessage(content=sys_text)
+        
+        # 2. Inseriamo o sostituiamo il SystemMessage come PRIMO messaggio
+        if messages and isinstance(messages[0], SystemMessage):
+            messages[0] = sys_msg
+        else:
+            messages.insert(0, sys_msg)
+            
+        # 3. Invochiamo il modello (il fallback pydantic manuale è stato rimosso)
         response = await llm_with_tools.ainvoke(messages)
         return {"messages": [response]}
 
