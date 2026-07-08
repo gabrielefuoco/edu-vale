@@ -9,7 +9,24 @@ router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
-    await message.answer("Ciao! Sono Edu-Agent. Usa /aiuto per vedere cosa posso fare.")
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from aiogram.types.web_app_info import WebAppInfo
+    import os
+    
+    # Su Render, RENDER_EXTERNAL_URL viene fornita automaticamente.
+    # Altrimenti mettiamo un URL di fallback.
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "https://il-tuo-sito.com")
+    app_url = f"{base_url}/webapp/index.html"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Apri Dati (Mini App)", web_app=WebAppInfo(url=app_url))]
+    ])
+    
+    await message.answer(
+        "Ciao! Sono Edu-Agent. Usa /aiuto per vedere cosa posso fare.\n\n"
+        "Clicca il bottone qui sotto per visualizzare e modificare le tue sessioni.",
+        reply_markup=keyboard
+    )
 
 @router.message(Command("aiuto"))
 async def cmd_aiuto(message: Message):
@@ -28,11 +45,10 @@ async def cmd_aiuto(message: Message):
         "📅 <b>I comandi rapidi a tua disposizione:</b>\n\n"
         "/oggi - Mostra la tua agenda di oggi e ti invia i file <code>.ics</code> pronti da salvare sul calendario del telefono.\n"
         "/utenti - Mostra la lista degli utenti attivi attualmente in carico.\n"
-        "/foglio - Ti fornisce il link diretto al registro su Google Sheets.\n"
-        "/esporta - Genera ed esporta un backup CSV completo di tutte le sessioni nel database.\n"
+        "/esporta - Genera ed esporta un foglio Excel con tutte le tue sessioni salvate nel database.\n"
         "/log - Genera un file <code>.txt</code> con l'intero storico delle attività/chiamate dell'agente e svuota la tabella dei log su MongoDB.\n"
         "/reset - Svuota la memoria recente della chat (utile se l'agente va in confusione).\n"
-        "/nuke - ⚠️ <b>[TEST]</b> Azzera completamente il database (utenti, agenda, storico) e svuota tutti i Fogli Google.\n\n"
+        "/nuke - ⚠️ <b>[TEST]</b> Azzera completamente il tuo database (utenti, agenda, storico).\n\n"
         "---\n\n"
         "💡 <b>Esempi di cose che puoi chiedermi a voce o per iscritto:</b>\n\n"
         "• <i>\"Registra: ieri ho fatto 2 ore con Alice in biblioteca, abbiamo fatto analisi logica\"</i>\n"
@@ -46,10 +62,6 @@ async def cmd_aiuto(message: Message):
     await message.answer(msg1, parse_mode="HTML")
     await message.answer(msg2, parse_mode="HTML")
 
-@router.message(Command("foglio"))
-async def cmd_foglio(message: Message):
-    url = os.getenv("GOOGLE_SHEET_URL", "URL non configurato")
-    await message.answer(f"Ecco il link al tuo registro: {url}")
 
 @router.message(Command("reset"))
 async def cmd_reset(message: Message, state: FSMContext):
@@ -60,7 +72,6 @@ async def cmd_reset(message: Message, state: FSMContext):
 
 @router.message(Command("nuke"))
 async def cmd_nuke(message: Message, state: FSMContext):
-    from services.sheets_service import clear_all_sheets
     await state.clear()
     
     # Reset DB
@@ -73,10 +84,7 @@ async def cmd_nuke(message: Message, state: FSMContext):
     col = await get_collection("diario_sessioni")
     await col.delete_many({})
     
-    # Reset Fogli Google
-    success, msg = await clear_all_sheets()
-    
-    await message.answer(f"💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione e Sessioni azzerati.\n📊 Fogli: {msg}")
+    await message.answer("💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione e Sessioni azzerati per questo account.")
 
 @router.message(Command("annulla"))
 async def cmd_annulla(message: Message, state: FSMContext):
@@ -93,23 +101,24 @@ async def cmd_utenti(message: Message):
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from aiogram.types import FSInputFile
-from services.export_service import export_sessions_to_csv
+from services.export_service import export_sessions_to_excel
 from services.calendar_service import generate_ics_file
 
 from aiogram.fsm.context import FSMContext
 
 @router.message(Command("esporta"))
 async def cmd_esporta(message: Message, state: FSMContext):
-    await message.answer("Sto esportando i dati, un attimo di pazienza...")
-    file_path = await export_sessions_to_csv()
+    await message.answer("Sto generando il tuo Excel, un attimo di pazienza...")
+    user_id = str(message.from_user.id)
+    file_path = await export_sessions_to_excel(user_id=user_id)
     doc = FSInputFile(file_path)
-    await message.answer_document(doc, caption="Ecco il tuo backup in CSV!")
+    await message.answer_document(doc, caption="Ecco il tuo file Excel aggiornato!")
     os.remove(file_path)
     
     # Inject context
     data = await state.get_data()
     messages = data.get("messages", [])
-    messages.append({"role": "system", "content": "L'utente ha esportato con successo il database in CSV."})
+    messages.append({"role": "system", "content": "L'utente ha esportato con successo il database in Excel."})
     await state.update_data(messages=messages)
 
 @router.message(Command("oggi"))

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Edu-Agent Dati</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #000000); }
+        .edit-cell { outline: none; border-bottom: 1px dashed #ccc; cursor: text; min-height: 20px; }
+        .edit-cell:focus { border-bottom: 2px solid var(--tg-theme-button-color, #3390ec); }
+    </style>
+</head>
+<body class="p-4 antialiased text-sm">
+    <div class="mb-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold">Le tue sessioni</h1>
+        <button id="refreshBtn" class="px-3 py-1 bg-gray-200 text-gray-800 rounded shadow hover:bg-gray-300">Aggiorna</button>
+    </div>
+    
+    <div id="errorBox" class="hidden p-3 mb-4 bg-red-100 text-red-700 rounded border border-red-300"></div>
+
+    <div class="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+        <table class="min-w-full divide-y divide-gray-300">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="py-2 pl-4 pr-3 text-left font-semibold text-gray-900">Giorno</th>
+                    <th class="px-3 py-2 text-left font-semibold text-gray-900">Ore</th>
+                    <th class="px-3 py-2 text-left font-semibold text-gray-900">Utente</th>
+                    <th class="px-3 py-2 text-left font-semibold text-gray-900">Attività</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody" class="divide-y divide-gray-200 bg-white">
+                <tr><td colspan="4" class="py-4 text-center text-gray-500">Caricamento...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

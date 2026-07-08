@@ -3,20 +3,19 @@ from zoneinfo import ZoneInfo
 from bson import ObjectId
 
 from database.connection import get_collection
-from services.sheets_service import append_session_to_sheet, rebuild_month_sheet
+
 
 async def execute_single_tool(fn_name: str, fn_args: dict, messages: list) -> tuple[str, str, list]:
     icona = "✅"
     res_text = ""
     
     if fn_name == "registra_sessione":
-        success, msg = await append_session_to_sheet(fn_args)
         col = await get_collection("diario_sessioni")
         await col.insert_one({"parsed": fn_args, "timestamp": datetime.now(ZoneInfo("Europe/Rome"))})
         
-        icona = "✅" if success else "⚠️"
-        res_text = f"Sessione registrata: {fn_args.get('Utente')} ({fn_args.get('Ore')}h). {msg}"
-        messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione registrata. Sheets: {msg}"})
+        icona = "✅"
+        res_text = f"Sessione registrata nel Database: {fn_args.get('Utente')} ({fn_args.get('Ore')}h)."
+        messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Sessione registrata nel DB."})
         
     elif fn_name == "pianifica_sessione":
         col = await get_collection("programmazione")
@@ -102,22 +101,8 @@ async def execute_single_tool(fn_name: str, fn_args: dict, messages: list) -> tu
                 result = await col.update_one({"_id": obj_id}, {"$set": update_data})
                 if result.modified_count > 0:
                     doc = await col.find_one({"_id": obj_id})
-                    # Rebuild sheet
-                    giorno = doc.get("parsed", {}).get("Giorno", "")
-                    if giorno and "-" in giorno:
-                        y, m = int(giorno.split("-")[0]), int(giorno.split("-")[1])
-                        mesi = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-                        sheet_name = f"{mesi[m-1]} {y}"
-                        # Ottieni tutte le sessioni del mese
-                        start_date = f"{y}-{m:02d}-01"
-                        end_date = f"{y}-{m:02d}-31"
-                        sessions = await col.find({"parsed.Giorno": {"$gte": start_date, "$lte": end_date}}).to_list(1000)
-                        sessions_data = [s["parsed"] for s in sessions]
-                        success, sheet_msg = await rebuild_month_sheet(sheet_name, sessions_data)
-                        res_text = f"Sessione passata modificata. Sheets: {sheet_msg}"
-                    else:
-                        res_text = "Sessione passata modificata. (Data invalida per Sheets)"
-                    messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: DB aggiornato e Sheet rigenerato."})
+                    res_text = "Sessione passata modificata con successo nel DB."
+                    messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: DB aggiornato."})
                 else:
                     icona = "⚠️"
                     res_text = "Nessuna sessione trovata con quell'ID."
@@ -139,20 +124,8 @@ async def execute_single_tool(fn_name: str, fn_args: dict, messages: list) -> tu
             doc = await col.find_one({"_id": obj_id})
             if doc:
                 await col.delete_one({"_id": obj_id})
-                giorno = doc.get("parsed", {}).get("Giorno", "")
-                if giorno and "-" in giorno:
-                    y, m = int(giorno.split("-")[0]), int(giorno.split("-")[1])
-                    mesi = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-                    sheet_name = f"{mesi[m-1]} {y}"
-                    start_date = f"{y}-{m:02d}-01"
-                    end_date = f"{y}-{m:02d}-31"
-                    sessions = await col.find({"parsed.Giorno": {"$gte": start_date, "$lte": end_date}}).to_list(1000)
-                    sessions_data = [s["parsed"] for s in sessions]
-                    success, sheet_msg = await rebuild_month_sheet(sheet_name, sessions_data)
-                    res_text = f"Sessione passata eliminata. Sheets: {sheet_msg}"
-                else:
-                    res_text = "Sessione passata eliminata."
-                messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: eliminata da DB e Sheet rigenerato."})
+                res_text = "Sessione passata eliminata."
+                messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: eliminata da DB."})
             else:
                 icona = "⚠️"
                 res_text = "Sessione non trovata."
