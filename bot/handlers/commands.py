@@ -13,19 +13,38 @@ async def cmd_start(message: Message):
 
 @router.message(Command("aiuto"))
 async def cmd_aiuto(message: Message):
-    help_text = """
-Ecco i comandi rapidi a tua disposizione:
-
-/oggi - 📅 Mostra l'agenda della giornata
-/utenti - 👥 Mostra la lista degli utenti in carico
-/foglio - 📊 Link al file Google Sheets
-/esporta - 💾 Esporta tutto il database in CSV
-/reset - 🧹 Pulisce la memoria e riavvia l'agente
-/aiuto - ℹ️ Mostra questo messaggio
-
-_💡 Suggerimento: Per tutto il resto (creare utenti, registrare sessioni, annullare appuntamenti, ecc.), parla direttamente con me inviandomi un vocale o un messaggio di testo!_
-    """
-    await message.answer(help_text)
+    msg1 = (
+        "🤖 <b>Benvenuto in EduAgent!</b>\n"
+        "Sono il tuo assistente operativo per supportarti nella gestione delle tue attività educative quotidiane.\n\n"
+        "🎙️ <b>Come parlarmi:</b>\n"
+        "- Puoi inviarmi un <b>messaggio vocale</b>: lo trascriverò e comprenderò immediatamente le tue istruzioni.\n"
+        "- Oppure puoi scrivermi un normale <b>messaggio di testo</b>.\n\n"
+        "🧠 <b>Come funziona la mia logica (Loop Agentico):</b>\n"
+        "- <b>Domande di chiarimento:</b> Se mi chiedi di registrare o pianificare qualcosa ma mancano dei dati fondamentali (es. l'orario o il nome dell'utente), non inventerò nulla: mi fermerò e ti farò una domanda diretta.\n"
+        "- <b>Sistema di conferma:</b> Prima di effettuare qualsiasi scrittura, modifica o cancellazione nel Database o sui Fogli Google, ti mostrerò una lista riepilogativa delle azioni e ti chiederò conferma tramite dei <b>bottoni interattivi</b>.\n"
+        "- <b>Azioni multiple:</b> Puoi chiedermi più cose contemporaneamente (es: <i>\"Registra la sessione di ieri con Marco e pianifica un incontro con Lucia per venerdì\"</i>) e io metterò in coda tutte le azioni necessarie per te."
+    )
+    msg2 = (
+        "📅 <b>I comandi rapidi a tua disposizione:</b>\n\n"
+        "/oggi - Mostra la tua agenda di oggi e ti invia i file <code>.ics</code> pronti da salvare sul calendario del telefono.\n"
+        "/utenti - Mostra la lista degli utenti attivi attualmente in carico.\n"
+        "/foglio - Ti fornisce il link diretto al registro su Google Sheets.\n"
+        "/esporta - Genera ed esporta un backup CSV completo di tutte le sessioni nel database.\n"
+        "/log - Genera un file <code>.txt</code> con l'intero storico delle attività/chiamate dell'agente e svuota la tabella dei log su MongoDB.\n"
+        "/reset - Svuota la memoria recente della chat (utile se l'agente va in confusione).\n"
+        "/nuke - ⚠️ <b>[TEST]</b> Azzera completamente il database (utenti, agenda, storico) e svuota tutti i Fogli Google.\n\n"
+        "---\n\n"
+        "💡 <b>Esempi di cose che puoi chiedermi a voce o per iscritto:</b>\n\n"
+        "• <i>\"Registra: ieri ho fatto 2 ore con Alice in biblioteca, abbiamo fatto analisi logica\"</i>\n"
+        "• <i>\"Pianifica: martedì prossimo dalle 15 alle 17 ho un incontro con Marco a domicilio\"</i>\n"
+        "• <i>\"Aggiungi un nuovo utente: Sofia, 4 ore settimanali, preferisce attività grafiche\"</i>\n"
+        "• <i>\"Salva nota per Sofia: Ricordati che è allergica alle fragole\"</i>\n"
+        "• <i>\"Mostrami le ultime sessioni di Alice\"</i>\n"
+        "• <i>\"Cosa ho in agenda per la prossima settimana?\"</i>\n"
+        "• <i>\"Modifica le ore settimanali di Marco a 6 ore\"</i>"
+    )
+    await message.answer(msg1, parse_mode="HTML")
+    await message.answer(msg2, parse_mode="HTML")
 
 @router.message(Command("foglio"))
 async def cmd_foglio(message: Message):

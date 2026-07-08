@@ -63,6 +63,21 @@ async def main():
     ]
     await bot.set_my_commands(commands_list)
     
+    # Imposta la descrizione di benvenuto (mostrata all'utente prima dell'avvio)
+    await bot.set_my_description(
+        "Ciao! Sono Edu-Agent, il tuo assistente operativo per la gestione delle attività educative. 📊\n\n"
+        "Posso aiutarti a:\n"
+        "- 📝 Registrare sessioni svolte ed esportarle automaticamente su Fogli Google.\n"
+        "- 📅 Pianificare appuntamenti futuri e gestire la tua agenda.\n"
+        "- 👥 Memorizzare informazioni, note e preferenze degli utenti in carico.\n\n"
+        "Inviami un vocale o un messaggio di testo per iniziare a lavorare insieme! 🎙️"
+    )
+    
+    # Imposta la descrizione breve (visibile sul profilo)
+    await bot.set_my_short_description(
+        "Assistente IA per la gestione operativa di sessioni, agenda e note educative."
+    )
+    
     # Avvia il server web fittizio per Render
     await start_dummy_server()
     
