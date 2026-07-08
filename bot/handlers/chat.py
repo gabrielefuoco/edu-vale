@@ -77,7 +77,7 @@ async def get_system_prompt() -> dict:
             f"Gli utenti attualmente in carico sono: {utenti_str}.\n"
             f"📍 LA TUA AGENDA DI OGGI:\n{agenda_str}\n\n"
             "Il tuo scopo è estrarre dati strutturati per eseguire i Tool a tua disposizione "
-            "(registra_sessione, pianifica_sessione, crea_utente, cerca_utenti, leggi_storico_sessioni, leggi_agenda, elimina_sessione_pianificata, modifica_utente, richiedi_chiarimento_utente). "
+            "(registra_sessione, pianifica_sessione, crea_utente, cerca_utenti, leggi_storico_sessioni, leggi_agenda, elimina_sessione_pianificata, modifica_utente, richiedi_chiarimento_utente, salva_nota_utente). "
             "REGOLE DI COMPORTAMENTO (AGENTE RE-ACT):\n"
             "1. RAGIONAMENTO E VERIFICA: Valuta sempre se hai tutti i dati prima di agire. Se un nome è ambiguo, usa 'cerca_utenti'. PRIMA di eliminare o modificare appuntamenti in blocco, DEVI TASSATIVAMENTE usare 'leggi_agenda' per verificare cosa esiste realmente. Non tirare a indovinare date o nomi se non sei sicuro che esistano.\n"
             "2. MULTI-TOOL: Puoi chiamare più tool contemporaneamente (es. registrare 3 sessioni diverse in un solo colpo).\n"
@@ -141,7 +141,9 @@ async def chat_handler(message: Message, state: FSMContext):
                     await message.answer(testo_pulito, parse_mode="HTML")
                 except Exception as e:
                     await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
-            return
+            if not pending_write_tools:
+                return
+            break
             
         # We have tool calls
         # Append assistant message with tool_calls
@@ -229,6 +231,12 @@ async def chat_handler(message: Message, state: FSMContext):
                 
         # If there are only write tools, stop the loop and ask for confirmation
         if not has_read_tools and pending_write_tools:
+            if bot_msg.content:
+                testo_pulito = format_for_telegram(bot_msg.content)
+                try:
+                    await message.answer(testo_pulito, parse_mode="HTML")
+                except Exception as e:
+                    await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
             break
             
         # If we have read tools, continue loop to let Agent reason with DB results

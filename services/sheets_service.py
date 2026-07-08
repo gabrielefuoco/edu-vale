@@ -9,8 +9,16 @@ MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", 
 
 def get_spreadsheet():
     creds_file = os.getenv("GOOGLE_SHEETS_CREDENTIALS_FILE")
-    if not creds_file or not os.path.exists(creds_file):
+    if not creds_file:
         return None
+    
+    if not os.path.isabs(creds_file):
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        creds_file = os.path.join(root_dir, creds_file)
+        
+    if not os.path.exists(creds_file):
+        return None
+        
     creds = ServiceAccountCredentials.from_json_keyfile_name(creds_file, SCOPE)
     client = gspread.authorize(creds)
     return client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))

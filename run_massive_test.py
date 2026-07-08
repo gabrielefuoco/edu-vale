@@ -43,6 +43,7 @@ class FakeMessage:
         self.from_user = FakeUser()
         self.bot = bot
         self.chat = FakeChat()
+        self.voice = None
         # For document export
         self.document_sent = None
 

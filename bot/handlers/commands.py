@@ -51,7 +51,7 @@ async def cmd_nuke(message: Message, state: FSMContext):
     await col.delete_many({})
     col = await get_collection("programmazione")
     await col.delete_many({})
-    col = await get_collection("sessioni")
+    col = await get_collection("diario_sessioni")
     await col.delete_many({})
     
     # Reset Fogli Google

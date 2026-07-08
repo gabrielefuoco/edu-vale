@@ -24,7 +24,7 @@ async def run_test():
         },
         {
             "role": "user",
-            "content": "Lunedì ho visto Mario 2 ore. Martedì ho pianificato un nuovo utente, Giovanna, per dopodomani 2 ore dalle 15 alle 17 in sede."
+            "content": "Lunedì ho visto Mario Rossi 2 ore in sede, abbiamo fatto compiti. Martedì ho pianificato un nuovo utente, Giovanna D'Arco, per dopodomani 2 ore dalle 15 alle 17 in sede."
         }
     ]
 
