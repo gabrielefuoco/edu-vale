@@ -88,7 +88,9 @@ async def get_system_prompt() -> dict:
             "2. MULTI-TOOL: Puoi chiamare più tool contemporaneamente (es. registrare 3 sessioni diverse in un solo colpo).\n"
             "3. DOMANDE ESPLICITE: Se mancano parametri obbligatori e non puoi dedurli dal contesto o dai read-tools, USA IL TOOL 'richiedi_chiarimento_utente'. Non chiedere cose scrivendo testo libero.\n"
             "4. STILE: Mantieni un tono essenziale, professionale e oggettivo. Niente consigli, niente convenevoli.\n"
-            "5. FORMATTAZIONE: Non usare MAI il Markdown (come gli asterischi **). Se devi evidenziare qualcosa in grassetto, usa esclusivamente i tag HTML <b>testo</b>."
+            "5. FORMATTAZIONE: Non usare MAI il Markdown. Niente asterischi **, niente trattini bassi __, niente cancelletti #, niente tabelle con | e -. "
+            "Per il grassetto usa ESCLUSIVAMENTE i tag HTML <b>testo</b>. Per il corsivo usa <i>testo</i>. "
+            "Per le liste usa trattini semplici preceduti da una riga vuota, non tabelle."
         )
     }
 
@@ -300,7 +302,8 @@ async def chat_handler(message: Message, state: FSMContext):
                 
             testo_azioni += "Cosa vuoi fare?"
             
-            await message.answer(format_for_telegram(testo_azioni), reply_markup=markup, parse_mode="HTML")
+            # testo_azioni contiene già tag HTML — NON passarlo a format_for_telegram
+            await message.answer(testo_azioni, reply_markup=markup, parse_mode="HTML")
             return
     
     finally:
@@ -388,7 +391,17 @@ async def confirm_all_tools(callback: CallbackQuery, state: FSMContext):
             messages.append({"role": "system", "content": f"Azione '{fn_name}' confermata: Nota utente salvata in memoria episodica."})
             
     await state.update_data(pending_tools_queue=[], messages=messages)
-    await callback.message.edit_text(format_for_telegram(res_text), parse_mode="HTML")
+    await callback.message.edit_text(res_text, parse_mode="HTML")
+    
+    # Chiama Mistral per un messaggio riepilogativo dopo l'esecuzione
+    try:
+        bot_msg, _ = await chat_with_agent(messages)
+        if bot_msg.content:
+            await callback.message.answer(format_for_telegram(bot_msg.content), parse_mode="HTML")
+            messages.append({"role": "assistant", "content": bot_msg.content})
+            await state.update_data(messages=messages)
+    except Exception as e:
+        await db_log("ERROR", "chat", f"Errore Mistral post-conferma: {e}")
 
 @router.callback_query(F.data == "confirm_single")
 async def start_single_confirmation(callback: CallbackQuery, state: FSMContext):
@@ -535,7 +548,16 @@ async def confirm_tool_call(callback: CallbackQuery, state: FSMContext):
         )
     else:
         await state.update_data(messages=messages, pending_tool=None, pending_args=None, pending_tool_id=None, pending_tools_queue=[])
-        await callback.message.edit_text(format_for_telegram(f"{res_text}\n\n✅ Tutte le azioni richieste sono state completate."), parse_mode="HTML")
+        await callback.message.edit_text(f"{res_text}\n\n✅ Tutte le azioni richieste sono state completate.", parse_mode="HTML")
+        # Chiama Mistral per un messaggio riepilogativo
+        try:
+            bot_msg, _ = await chat_with_agent(messages)
+            if bot_msg.content:
+                await callback.message.answer(format_for_telegram(bot_msg.content), parse_mode="HTML")
+                messages.append({"role": "assistant", "content": bot_msg.content})
+                await state.update_data(messages=messages)
+        except Exception as e:
+            await db_log("ERROR", "chat", f"Errore Mistral post-conferma singola: {e}")
 
 @router.callback_query(F.data == "cancel_tool")
 async def cancel_tool_call(callback: CallbackQuery, state: FSMContext):
