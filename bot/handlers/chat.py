@@ -137,144 +137,144 @@ async def chat_handler(message: Message, state: FSMContext):
         pending_write_tools = []
 
     
-    while loop_count < MAX_LOOP:
-        loop_count += 1
-        bot_msg, tool_calls = await chat_with_agent(messages)
-        
-        if not tool_calls:
-            # End of agentic loop, no more tools
-            messages.append({"role": "assistant", "content": bot_msg.content})
-            await state.update_data(messages=messages)
-            if bot_msg.content:
-                testo_pulito = format_for_telegram(bot_msg.content)
-                try:
-                    await message.answer(testo_pulito, parse_mode="HTML")
-                except Exception as e:
-                    await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
-            if not pending_write_tools:
-                return
-            break
+        while loop_count < MAX_LOOP:
+            loop_count += 1
+            bot_msg, tool_calls = await chat_with_agent(messages)
             
-        # We have tool calls
-        # Append assistant message with tool_calls
-        tc_dicts = [{"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments}} for tc in tool_calls]
-        messages.append({"role": "assistant", "content": bot_msg.content or "", "tool_calls": tc_dicts})
-        
-        has_read_tools = False
-        
-        for tc in tool_calls:
-            fn_name = tc.function.name
-            try:
-                fn_args = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                fn_args = {}
+            if not tool_calls:
+                # End of agentic loop, no more tools
+                messages.append({"role": "assistant", "content": bot_msg.content})
+                await state.update_data(messages=messages)
+                if bot_msg.content:
+                    testo_pulito = format_for_telegram(bot_msg.content)
+                    try:
+                        await message.answer(testo_pulito, parse_mode="HTML")
+                    except Exception as e:
+                        await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
+                if not pending_write_tools:
+                    return
+                break
                 
-            # Self-Reflection (Validazione Pydantic)
-            model_cls = TOOL_MODELS.get(fn_name)
-            if model_cls:
+            # We have tool calls
+            # Append assistant message with tool_calls
+            tc_dicts = [{"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments}} for tc in tool_calls]
+            messages.append({"role": "assistant", "content": bot_msg.content or "", "tool_calls": tc_dicts})
+            
+            has_read_tools = False
+            
+            for tc in tool_calls:
+                fn_name = tc.function.name
                 try:
-                    # Validiamo e dumpo gestendo gli alias (es. "Attività svolte")
-                    fn_args = model_cls(**fn_args).model_dump(by_alias=True)
-                except ValidationError as e:
-                    error_msg = str(e).replace('\n', ' ')
-                    messages.append({"role": "tool", "name": fn_name, "content": f"Errore di validazione Pydantic: {error_msg}. Correggi la tua chiamata.", "tool_call_id": tc.id})
+                    fn_args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    fn_args = {}
+                    
+                # Self-Reflection (Validazione Pydantic)
+                model_cls = TOOL_MODELS.get(fn_name)
+                if model_cls:
+                    try:
+                        # Validiamo e dumpo gestendo gli alias (es. "Attività svolte")
+                        fn_args = model_cls(**fn_args).model_dump(by_alias=True)
+                    except ValidationError as e:
+                        error_msg = str(e).replace('\n', ' ')
+                        messages.append({"role": "tool", "name": fn_name, "content": f"Errore di validazione Pydantic: {error_msg}. Correggi la tua chiamata.", "tool_call_id": tc.id})
+                        has_read_tools = True
+                        continue # Continua il ciclo while per permettere a Mistral di auto-correggersi
+                    
+                if fn_name == "richiedi_chiarimento_utente":
+                    domanda = fn_args.get("domanda_da_porre", "Puoi chiarire?")
+                    messages.append({"role": "tool", "name": fn_name, "content": "Domanda inviata all'utente. In attesa di risposta testuale.", "tool_call_id": tc.id})
+                    await state.update_data(messages=messages, pending_tools_queue=[]) # Scartiamo eventuali write tools in coda per non incartare lo stato
+                    await message.answer(f"❓ {domanda}")
+                    return # Interrompiamo il loop agentico e mettiamoci in ascolto
+                    
+                elif fn_name == "cerca_utenti":
                     has_read_tools = True
-                    continue # Continua il ciclo while per permettere a Mistral di auto-correggersi
-                
-            if fn_name == "richiedi_chiarimento_utente":
-                domanda = fn_args.get("domanda_da_porre", "Puoi chiarire?")
-                messages.append({"role": "tool", "name": fn_name, "content": "Domanda inviata all'utente. In attesa di risposta testuale.", "tool_call_id": tc.id})
-                await state.update_data(messages=messages, pending_tools_queue=[]) # Scartiamo eventuali write tools in coda per non incartare lo stato
-                await message.answer(f"❓ {domanda}")
-                return # Interrompiamo il loop agentico e mettiamoci in ascolto
-                
-            elif fn_name == "cerca_utenti":
-                has_read_tools = True
-                query = fn_args.get("query", "")
-                col = await get_collection("utenti")
-                
-                try:
-                    # Fuzzy Search con Atlas
-                    pipeline = [{"$search": {"index": "default", "text": {"query": query, "path": "nome", "fuzzy": {}}}}]
-                    utenti = await col.aggregate(pipeline).to_list(10)
-                except Exception:
-                    # Fallback robusto al Regex se l'indice non esiste su Atlas
-                    utenti = await col.find({"nome": {"$regex": query, "$options": "i"}}).to_list(10)
-                
-                if utenti:
-                    res_str = "Utenti trovati:\n" + "\n".join([f"- {u.get('nome')} (Ore: {u.get('ore_settimanali', 0)}), Note: {u.get('note', '')}, Preferenze Episodiche: {u.get('preferenze', [])}" for u in utenti])
+                    query = fn_args.get("query", "")
+                    col = await get_collection("utenti")
+                    
+                    try:
+                        # Fuzzy Search con Atlas
+                        pipeline = [{"$search": {"index": "default", "text": {"query": query, "path": "nome", "fuzzy": {}}}}]
+                        utenti = await col.aggregate(pipeline).to_list(10)
+                    except Exception:
+                        # Fallback robusto al Regex se l'indice non esiste su Atlas
+                        utenti = await col.find({"nome": {"$regex": query, "$options": "i"}}).to_list(10)
+                    
+                    if utenti:
+                        res_str = "Utenti trovati:\n" + "\n".join([f"- {u.get('nome')} (Ore: {u.get('ore_settimanali', 0)}), Note: {u.get('note', '')}, Preferenze Episodiche: {u.get('preferenze', [])}" for u in utenti])
+                    else:
+                        res_str = "Nessun utente trovato con quel nome."
+                    messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
+                    
+                elif fn_name == "leggi_storico_sessioni":
+                    has_read_tools = True
+                    utente = fn_args.get("utente", "")
+                    limite = fn_args.get("limite", 5)
+                    col = await get_collection("diario_sessioni")
+                    res = await col.find({"parsed.Utente": {"$regex": utente, "$options": "i"}}).sort("timestamp", -1).limit(limite).to_list(limite)
+                    if not res:
+                        res_str = "Nessuna sessione trovata per questo utente."
+                    else:
+                        res_str = json.dumps([r["parsed"] for r in res])
+                    messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
+                    
+                elif fn_name == "leggi_agenda":
+                    has_read_tools = True
+                    data_inizio = fn_args.get("data_inizio", "")
+                    data_fine = fn_args.get("data_fine", "")
+                    col = await get_collection("programmazione")
+                    query = {"Data": {"$gte": data_inizio}}
+                    if data_fine:
+                        query["Data"]["$lte"] = data_fine
+                    res = await col.find(query).sort("Data", 1).to_list(20)
+                    if not res:
+                        res_str = "Nessun appuntamento in agenda per il periodo specificato."
+                    else:
+                        res_str = json.dumps([{"Data": r.get("Data"), "Utente": r.get("Utente"), "Inizio": r.get("Ora Inizio"), "Fine": r.get("Ora Fine")} for r in res])
+                    messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
+                    
                 else:
-                    res_str = "Nessun utente trovato con quel nome."
-                messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
+                    # Write tools: registra_sessione, pianifica_sessione, crea_utente, elimina_sessione_pianificata, modifica_utente
+                    pending_write_tools.append({"name": fn_name, "args": fn_args, "id": tc.id})
+                    messages.append({"role": "tool", "name": fn_name, "content": "Azione messa in coda. In attesa di conferma dall'utente.", "tool_call_id": tc.id})
+                    
+            # If there are only write tools, stop the loop and ask for confirmation
+            if not has_read_tools and pending_write_tools:
+                if bot_msg.content:
+                    testo_pulito = format_for_telegram(bot_msg.content)
+                    try:
+                        await message.answer(testo_pulito, parse_mode="HTML")
+                    except Exception as e:
+                        await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
+                break
                 
-            elif fn_name == "leggi_storico_sessioni":
-                has_read_tools = True
-                utente = fn_args.get("utente", "")
-                limite = fn_args.get("limite", 5)
-                col = await get_collection("diario_sessioni")
-                res = await col.find({"parsed.Utente": {"$regex": utente, "$options": "i"}}).sort("timestamp", -1).limit(limite).to_list(limite)
-                if not res:
-                    res_str = "Nessuna sessione trovata per questo utente."
-                else:
-                    res_str = json.dumps([r["parsed"] for r in res])
-                messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
-                
-            elif fn_name == "leggi_agenda":
-                has_read_tools = True
-                data_inizio = fn_args.get("data_inizio", "")
-                data_fine = fn_args.get("data_fine", "")
-                col = await get_collection("programmazione")
-                query = {"Data": {"$gte": data_inizio}}
-                if data_fine:
-                    query["Data"]["$lte"] = data_fine
-                res = await col.find(query).sort("Data", 1).to_list(20)
-                if not res:
-                    res_str = "Nessun appuntamento in agenda per il periodo specificato."
-                else:
-                    res_str = json.dumps([{"Data": r.get("Data"), "Utente": r.get("Utente"), "Inizio": r.get("Ora Inizio"), "Fine": r.get("Ora Fine")} for r in res])
-                messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
-                
-            else:
-                # Write tools: registra_sessione, pianifica_sessione, crea_utente, elimina_sessione_pianificata, modifica_utente
-                pending_write_tools.append({"name": fn_name, "args": fn_args, "id": tc.id})
-                messages.append({"role": "tool", "name": fn_name, "content": "Azione messa in coda. In attesa di conferma dall'utente.", "tool_call_id": tc.id})
-                
-        # If there are only write tools, stop the loop and ask for confirmation
-        if not has_read_tools and pending_write_tools:
-            if bot_msg.content:
-                testo_pulito = format_for_telegram(bot_msg.content)
-                try:
-                    await message.answer(testo_pulito, parse_mode="HTML")
-                except Exception as e:
-                    await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
-            break
+            # If we have read tools, continue loop to let Agent reason with DB results
             
-        # If we have read tools, continue loop to let Agent reason with DB results
-        
-    if pending_write_tools:
-        await state.update_data(
-            pending_tools_queue=pending_write_tools,
-            messages=messages
-        )
-        
-        markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Conferma Tutto in Blocco", callback_data="confirm_all")],
-            [InlineKeyboardButton(text="➡️ Conferma Singolarmente", callback_data="confirm_single")],
-            [InlineKeyboardButton(text="❌ Annulla Tutto", callback_data="cancel_all")]
-        ])
-        
-        testo_azioni = "L'agente vuole eseguire le seguenti azioni:\n\n"
-        for i, pt in enumerate(pending_write_tools, 1):
-            testo_azioni += f"{i}. <b>{pt['name']}</b>\n"
-            for k, v in pt['args'].items():
-                testo_azioni += f"   - {k}: {v}\n"
-            testo_azioni += "\n"
+        if pending_write_tools:
+            await state.update_data(
+                pending_tools_queue=pending_write_tools,
+                messages=messages
+            )
             
-        testo_azioni += "Cosa vuoi fare?"
-        
-        await message.answer(format_for_telegram(testo_azioni), reply_markup=markup, parse_mode="HTML")
-        return
-
+            markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Conferma Tutto in Blocco", callback_data="confirm_all")],
+                [InlineKeyboardButton(text="➡️ Conferma Singolarmente", callback_data="confirm_single")],
+                [InlineKeyboardButton(text="❌ Annulla Tutto", callback_data="cancel_all")]
+            ])
+            
+            testo_azioni = "L'agente vuole eseguire le seguenti azioni:\n\n"
+            for i, pt in enumerate(pending_write_tools, 1):
+                testo_azioni += f"{i}. <b>{pt['name']}</b>\n"
+                for k, v in pt['args'].items():
+                    testo_azioni += f"   - {k}: {v}\n"
+                testo_azioni += "\n"
+                
+            testo_azioni += "Cosa vuoi fare?"
+            
+            await message.answer(format_for_telegram(testo_azioni), reply_markup=markup, parse_mode="HTML")
+            return
+    
     finally:
         await state.update_data(is_processing=False)
 
