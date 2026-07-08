@@ -49,7 +49,10 @@ async def route_message(message: Message):
         
         if message.voice:
             text = await transcribe_voice(message)
-            await message.reply(f"🎙️ *Trascrizione:* {text}", parse_mode="Markdown")
+            try:
+                await message.reply(f"🎙️ <b>Trascrizione:</b> {text}", parse_mode="HTML")
+            except Exception:
+                await message.reply(f"🎙️ Trascrizione: {text}")
         else:
             text = message.text
             
@@ -77,7 +80,7 @@ async def route_message(message: Message):
                 # Il grafo si è interrotto prima di write_tools
                 # Estraiamo l'ultima richiesta di tool per farla approvare
                 last_msg = state.values["messages"][-1]
-                tools_desc = "\n".join([f"- {tc['name']}" for tc in last_msg.tool_calls])
+                tools_desc = "\n".join([f"- <code>{tc['name']}</code>" for tc in last_msg.tool_calls])
                 
                 markup = InlineKeyboardMarkup(inline_keyboard=[
                     [
@@ -85,11 +88,14 @@ async def route_message(message: Message):
                         InlineKeyboardButton(text="❌ Annulla", callback_data="cancel_tools")
                     ]
                 ])
-                await message.reply(f"⚠️ **Richiesta di conferma**\nL'agente vuole eseguire le seguenti azioni:\n{tools_desc}", reply_markup=markup, parse_mode="Markdown")
+                await message.reply(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire le seguenti azioni:\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
             else:
                 # Nessuna interruzione, risposta finale
                 final_msg = result["messages"][-1]
-                await message.reply(final_msg.content)
+                try:
+                    await message.reply(final_msg.content, parse_mode="Markdown")
+                except Exception:
+                    await message.reply(final_msg.content)
                 
         except Exception as e:
             await db_log("ERROR", "router", f"Errore durante l'esecuzione del grafo: {e}")

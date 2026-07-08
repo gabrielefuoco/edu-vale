@@ -25,10 +25,15 @@ async def confirm_tools(callback: CallbackQuery):
         try:
             # Riprendi l'esecuzione (valore None fa riprendere dal punto di interrupt)
             result = await agent_config["graph"].ainvoke(None, config=config)
-            
-            # Risposta finale dopo esecuzione tool e ragionamento
-            final_msg = result["messages"][-1]
-            await callback.message.edit_text(f"✅ **Eseguito**\n\n{final_msg.content}", parse_mode="Markdown")
+            state = await agent_config["graph"].aget_state(config)
+            if state.next and "write_tools" in state.next:
+                pass # Continua ad aspettare conferme (non dovrebbe succedere se abbiamo eseguito tutti i tool)
+            else:
+                final_msg = result["messages"][-1]
+                try:
+                    await callback.message.edit_text(f"✅ **Eseguito**\n\n{final_msg.content}", parse_mode="Markdown")
+                except Exception:
+                    await callback.message.edit_text(f"✅ Eseguito\n\n{final_msg.content}")
         except Exception as e:
             await callback.message.edit_text(f"❌ Errore durante l'esecuzione: {e}")
 
@@ -67,6 +72,9 @@ async def cancel_tools(callback: CallbackQuery):
             result = await agent_config["graph"].ainvoke({"messages": tool_messages}, config=config)
             
             final_msg = result["messages"][-1]
-            await callback.message.edit_text(f"❌ **Azione Annullata**\n\n{final_msg.content}", parse_mode="Markdown")
+            try:
+                await callback.message.edit_text(f"❌ **Azione Annullata**\n\n{final_msg.content}", parse_mode="Markdown")
+            except Exception:
+                await callback.message.edit_text(f"❌ Azione Annullata\n\n{final_msg.content}")
         except Exception as e:
             await callback.message.edit_text(f"❌ Errore durante l'annullamento: {e}")
