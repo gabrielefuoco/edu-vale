@@ -6,7 +6,6 @@ from aiogram.fsm.state import StatesGroup, State
 from database.connection import get_collection
 from database.models import User
 from services.ai_service import extract_session_data, transcribe_audio
-from services.sheets_service import append_session_to_sheet
 import os
 import json
 
@@ -73,7 +72,7 @@ async def process_session_text(text: str, message: Message, state: FSMContext):
     await state.update_data(session_data=data, text=text)
     
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Salva nel Foglio e DB", callback_data="salva_sessione")],
+        [InlineKeyboardButton(text="✅ Salva nel Database", callback_data="salva_sessione")],
         [InlineKeyboardButton(text="❌ Annulla", callback_data="annulla_sessione")]
     ])
     
@@ -84,9 +83,6 @@ async def process_session_text(text: str, message: Message, state: FSMContext):
 async def salva_sessione(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     session_data = data['session_data']
-    
-    # Save to sheets
-    append_session_to_sheet(session_data)
     
     # Save to DB
     col = await get_collection("diario_sessioni")
