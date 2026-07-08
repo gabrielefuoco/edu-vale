@@ -133,11 +133,11 @@ async def chat_handler(message: Message, state: FSMContext):
         else:
             user_input = message.text
     
-        # Log user message
-        await db_log("INFO", "chat", f"Messaggio utente ricevuto", {
+        # Log user message (completo, nessun troncamento)
+        await db_log("INFO", "chat", "[USER] Messaggio ricevuto", {
             "user_id": message.from_user.id,
             "username": message.from_user.username,
-            "text": user_input[:500]  # tronca a 500 char per non appesantire
+            "text": user_input
         })
         
         # Append user message
@@ -163,18 +163,23 @@ async def chat_handler(message: Message, state: FSMContext):
                         await message.answer(testo_pulito, parse_mode="HTML")
                     except Exception as e:
                         await message.answer(bot_msg.content.replace("**", "").replace("<", "").replace(">", ""))
-                    # Log bot response
-                    await db_log("INFO", "chat", "Risposta bot inviata", {
+                    # Log risposta finale bot (completa)
+                    await db_log("INFO", "chat", "[BOT] Risposta finale inviata", {
                         "user_id": message.from_user.id,
-                        "text": (bot_msg.content or "")[:500]
+                        "loop_count": loop_count,
+                        "text": bot_msg.content or ""
                     })
                 if not pending_write_tools:
                     return
                 break
                 
-            # We have tool calls
-            # Append assistant message with tool_calls
+            # We have tool calls — log l'intenzione dell'agente
             tc_dicts = [{"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments}} for tc in tool_calls]
+            await db_log("INFO", "chat", f"[AGENT] Tool call(s) richiesti (loop {loop_count})", {
+                "user_id": message.from_user.id,
+                "agent_text": bot_msg.content or "",
+                "tools": [{"name": tc["function"]["name"], "args": tc["function"]["arguments"]} for tc in tc_dicts]
+            })
             messages.append({"role": "assistant", "content": bot_msg.content or "", "tool_calls": tc_dicts})
             
             has_read_tools = False
@@ -195,13 +200,15 @@ async def chat_handler(message: Message, state: FSMContext):
                     except ValidationError as e:
                         error_msg = str(e).replace('\n', ' ')
                         messages.append({"role": "tool", "name": fn_name, "content": f"Errore di validazione Pydantic: {error_msg}. Correggi la tua chiamata.", "tool_call_id": tc.id})
+                        await db_log("WARNING", "chat", f"[TOOL:{fn_name}] Errore validazione Pydantic", {"error": error_msg, "args": fn_args})
                         has_read_tools = True
                         continue # Continua il ciclo while per permettere a Mistral di auto-correggersi
                     
                 if fn_name == "richiedi_chiarimento_utente":
                     domanda = fn_args.get("domanda_da_porre", "Puoi chiarire?")
                     messages.append({"role": "tool", "name": fn_name, "content": "Domanda inviata all'utente. In attesa di risposta testuale.", "tool_call_id": tc.id})
-                    await state.update_data(messages=messages, pending_tools_queue=[]) # Scartiamo eventuali write tools in coda per non incartare lo stato
+                    await db_log("INFO", "chat", f"[TOOL:{fn_name}] Chiarimento richiesto all'utente", {"domanda": domanda})
+                    await state.update_data(messages=messages, pending_tools_queue=[])
                     await message.answer(f"❓ {domanda}")
                     return # Interrompiamo il loop agentico e mettiamoci in ascolto
                     
@@ -223,6 +230,7 @@ async def chat_handler(message: Message, state: FSMContext):
                     else:
                         res_str = "Nessun utente trovato con quel nome."
                     messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
+                    await db_log("INFO", "chat", f"[TOOL:{fn_name}] Risultato", {"query": query, "result": res_str})
                     
                 elif fn_name == "leggi_storico_sessioni":
                     has_read_tools = True
@@ -235,6 +243,7 @@ async def chat_handler(message: Message, state: FSMContext):
                     else:
                         res_str = json.dumps([r["parsed"] for r in res])
                     messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
+                    await db_log("INFO", "chat", f"[TOOL:{fn_name}] Risultato", {"utente": utente, "result": res_str})
                     
                 elif fn_name == "leggi_agenda":
                     has_read_tools = True
@@ -250,11 +259,13 @@ async def chat_handler(message: Message, state: FSMContext):
                     else:
                         res_str = json.dumps([{"Data": r.get("Data"), "Utente": r.get("Utente"), "Inizio": r.get("Ora Inizio"), "Fine": r.get("Ora Fine")} for r in res])
                     messages.append({"role": "tool", "name": fn_name, "content": res_str, "tool_call_id": tc.id})
+                    await db_log("INFO", "chat", f"[TOOL:{fn_name}] Risultato", {"data_inizio": data_inizio, "data_fine": data_fine, "result": res_str})
                     
                 else:
                     # Write tools: registra_sessione, pianifica_sessione, crea_utente, elimina_sessione_pianificata, modifica_utente
                     pending_write_tools.append({"name": fn_name, "args": fn_args, "id": tc.id})
                     messages.append({"role": "tool", "name": fn_name, "content": "Azione messa in coda. In attesa di conferma dall'utente.", "tool_call_id": tc.id})
+                    await db_log("INFO", "chat", f"[TOOL:{fn_name}] Messo in coda (write tool)", {"args": fn_args})
                     
             # If there are only write tools, stop the loop and ask for confirmation
             if not has_read_tools and pending_write_tools:
