@@ -23,6 +23,12 @@ async def get_db():
 async def get_collection(name: str):
     database = await get_db()
     return database[name]
+    
+async def get_system_collection(name: str):
+    if client is None:
+        raise Exception("MongoDB client non inizializzato.")
+    database = client["edu_agent_system"]
+    return database[name]
 
 from langgraph.checkpoint.mongodb import MongoDBSaver
 

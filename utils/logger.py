@@ -29,8 +29,8 @@ async def db_log(level: str, module: str, message: str, details: dict = None):
         logger.info(formatted_msg)
         
     try:
-        from database.connection import get_collection
-        col = await get_collection("system_logs")
+        from database.connection import get_system_collection
+        col = await get_system_collection("system_logs")
         log_doc = {
             "timestamp": datetime.now(ZoneInfo("Europe/Rome")),
             "level": level,

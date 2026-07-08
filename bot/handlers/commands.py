@@ -2,7 +2,7 @@ import os
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
-from database.connection import get_collection, get_system_config, save_system_config
+from database.connection import get_collection, get_system_config, save_system_config, get_system_collection
 from bot.main_registry import AGENT_REGISTRY
 from utils.logger import logger
 
@@ -233,7 +233,7 @@ async def cmd_oggi(message: Message):
 @router.message(Command("log"))
 async def cmd_log(message: Message):
     await message.answer("Recupero i log dal database, attendi...")
-    col = await get_collection("system_logs")
+    col = await get_system_collection("system_logs")
     logs = await col.find().sort("timestamp", 1).to_list(length=None)
     
     if not logs:
