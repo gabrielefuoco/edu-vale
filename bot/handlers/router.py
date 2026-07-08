@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage
 from services.ai_service import transcribe_audio
 from utils.logger import db_log
 from bot.main_registry import AGENT_REGISTRY, _processing_locks
+from database.connection import get_system_config
 import os
 
 router = Router()
