@@ -121,7 +121,7 @@ async def route_message(message: Message):
                 # Nessuna interruzione, risposta finale
                 final_msg = result["messages"][-1]
                 await db_log("INFO", "chat", f"📤 Risposta dell'agente a {user_id}:\n{final_msg.content}")
-                await send_split_message(status_msg, final_msg.content, parse_mode="Markdown")
+                await send_split_message(status_msg, final_msg.content, parse_mode="HTML_from_Markdown")
                 
         except Exception as e:
             await db_log("ERROR", "router", f"Errore durante l'esecuzione del grafo: {e}")

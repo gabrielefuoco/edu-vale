@@ -1,5 +1,18 @@
 import asyncio
+import re
 from typing import Callable, Any
+
+def markdown_to_html(text: str) -> str:
+    """Converte un subset del markdown (**, *, #) in HTML per Telegram."""
+    # Escape base per evitare che `<` o `>` scoccati casualmente rompano l'XML parser
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    # Bold
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
+    # Italic
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text, flags=re.DOTALL)
+    # Headers trasformati in grassetto
+    text = re.sub(r'^(#{1,6})\s+(.+)$', r'<b>\2</b>', text, flags=re.MULTILINE)
+    return text
 
 async def send_split_message(status_msg: Any, text: str, parse_mode: str = "Markdown", chunk_size: int = 4000):
     """
@@ -7,6 +20,10 @@ async def send_split_message(status_msg: Any, text: str, parse_mode: str = "Mark
     The first chunk edits the status_msg.
     Subsequent chunks are sent as replies to the chat.
     """
+    if parse_mode == "HTML_from_Markdown":
+        text = markdown_to_html(text)
+        parse_mode = "HTML"
+        
     chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
     if not chunks:
         return
