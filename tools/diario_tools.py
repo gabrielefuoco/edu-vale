@@ -53,3 +53,42 @@ async def salva_diario_bordo(data: str, utente: str, testo_generato: str, config
     
     await col_diari.insert_one(doc)
     return f"Diario di bordo salvato con successo per {utente} il {data}."
+
+class ModificaDiarioArgs(BaseModel):
+    id_diario: str = Field(description="L'ID del diario da modificare (recuperato tramite leggi_diari_bordo)")
+    nuovo_testo: str = Field(description="Il nuovo testo completo del diario")
+
+@tool(args_schema=ModificaDiarioArgs)
+async def modifica_diario_bordo(id_diario: str, nuovo_testo: str, config: RunnableConfig) -> str:
+    """Modifica (sovrascrive) un diario di bordo esistente."""
+    uid = config["configurable"]["user_id"]
+    col_diari = await get_collection(f"diari_bordo", uid)
+    
+    try:
+        obj_id = ObjectId(id_diario)
+    except Exception:
+        return f"Errore: L'ID '{id_diario}' non è valido."
+        
+    result = await col_diari.update_one({"_id": obj_id}, {"$set": {"testo_generato": nuovo_testo}})
+    if result.matched_count == 0:
+        return f"Errore: Diario con ID '{id_diario}' non trovato."
+    return f"✅ Diario di bordo (ID {id_diario}) modificato con successo."
+
+class EliminaDiarioArgs(BaseModel):
+    id_diario: str = Field(description="L'ID del diario da eliminare")
+
+@tool(args_schema=EliminaDiarioArgs)
+async def elimina_diario_bordo(id_diario: str, config: RunnableConfig) -> str:
+    """Elimina definitivamente un diario di bordo."""
+    uid = config["configurable"]["user_id"]
+    col_diari = await get_collection(f"diari_bordo", uid)
+    
+    try:
+        obj_id = ObjectId(id_diario)
+    except Exception:
+        return f"Errore: L'ID '{id_diario}' non è valido."
+        
+    result = await col_diari.delete_one({"_id": obj_id})
+    if result.deleted_count == 0:
+        return f"Errore: Diario con ID '{id_diario}' non trovato."
+    return f"🗑️ Diario di bordo (ID {id_diario}) eliminato con successo."

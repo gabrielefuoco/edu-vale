@@ -77,3 +77,25 @@ async def leggi_agenda(data_inizio: str, config: RunnableConfig, data_fine: str 
     for a in appuntamenti:
         risposta += f"- {a.get('data')} | {a.get('ora_inizio')}-{a.get('ora_fine')} | {a.get('utente_id')} ({a.get('luogo')})\n"
     return risposta
+
+class LeggiDiariBordoArgs(BaseModel):
+    utente: str = Field(description="Nome dell'utente")
+    limite: int = Field(default=3, description="Numero massimo di diari da recuperare")
+
+@tool(args_schema=LeggiDiariBordoArgs)
+async def leggi_diari_bordo(utente: str, limite: int, config: RunnableConfig) -> str:
+    """Legge i diari di bordo completi (dettagliati) passati di un utente. Restituisce anche l'ID per eventuali modifiche o eliminazioni."""
+    uid = config["configurable"]["user_id"]
+    col_diari = await get_collection(f"diari_bordo", uid)
+    cursor = col_diari.find({"utente": utente}).sort("data", -1).limit(limite)
+    diari = await cursor.to_list(length=limite)
+    
+    if not diari:
+        return f"Nessun diario di bordo trovato per l'utente '{utente}'."
+        
+    risposta = f"Ultimi {len(diari)} diari di bordo per {utente}:\n\n"
+    for d in diari:
+        risposta += f"=== DIARIO ID: {d['_id']} ===\n"
+        risposta += f"DATA: {d.get('data')}\n"
+        risposta += f"{d.get('testo_generato')}\n\n"
+    return risposta
