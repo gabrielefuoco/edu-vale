@@ -6,12 +6,17 @@ def markdown_to_html(text: str) -> str:
     """Converte un subset del markdown (**, *, #) in HTML per Telegram."""
     # Escape base per evitare che `<` o `>` scoccati casualmente rompano l'XML parser
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    
+    # Headers trasformati in grassetto (rimuoviamo eventuali ** interni per non annidarli)
+    def header_repl(match):
+        content = match.group(2).replace('**', '').replace('*', '')
+        return f"<b>{content}</b>"
+    text = re.sub(r'^(#{1,6})\s+(.+)$', header_repl, text, flags=re.MULTILINE)
+    
     # Bold
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
     # Italic
     text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text, flags=re.DOTALL)
-    # Headers trasformati in grassetto
-    text = re.sub(r'^(#{1,6})\s+(.+)$', r'<b>\2</b>', text, flags=re.MULTILINE)
     return text
 
 async def send_split_message(status_msg: Any, text: str, parse_mode: str = "Markdown", chunk_size: int = 4000):

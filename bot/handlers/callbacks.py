@@ -40,7 +40,7 @@ async def confirm_tools(callback: CallbackQuery):
                 pass # Continua ad aspettare conferme (non dovrebbe succedere se abbiamo eseguito tutti i tool)
             else:
                 final_msg = result["messages"][-1]
-                await send_split_message(callback.message, f"✅ <b>Eseguito</b>\n\n{final_msg.content}", parse_mode="HTML_from_Markdown")
+                await send_split_message(callback.message, f"✅ **Eseguito**\n\n{final_msg.content}", parse_mode="HTML_from_Markdown")
         except Exception as e:
             await callback.message.edit_text(f"❌ Errore durante l'esecuzione: {e}")
 
