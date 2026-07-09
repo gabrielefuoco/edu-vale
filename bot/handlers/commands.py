@@ -2,9 +2,9 @@ import os
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, ChatMemberUpdated
-from database.connection import get_collection, get_system_config, save_system_config, get_system_collection
+from database.connection import get_collection, get_system_config, save_system_config, get_system_collection, get_checkpoint_collection
 from bot.main_registry import AGENT_REGISTRY
-from utils.logger import logger
+from utils.logger import logger, db_log
 
 router = Router()
 
@@ -174,9 +174,12 @@ async def cmd_aiuto(message: Message):
 
 @router.message(Command("reset"))
 async def cmd_reset(message: Message):
-    col = await get_collection("checkpoints")
+    col = await get_checkpoint_collection("checkpoints")
     thread_id = f"{message.from_user.id}_{message.message_thread_id}"
     await col.delete_many({"thread_id": thread_id})
+    col2 = await get_checkpoint_collection("checkpoint_writes")
+    await col2.delete_many({"thread_id": thread_id})
+    await db_log("INFO", "system", f"L'utente {message.from_user.id} ha resettato la memoria nel topic {message.message_thread_id}.")
     await message.answer("🔄 Memoria del topic azzerata! L'agente ha dimenticato il contesto recente e ripartirà da zero.")
 
 @router.message(Command("nuke"))
@@ -192,11 +195,13 @@ async def cmd_nuke(message: Message):
     await col.delete_many({})
     col = await get_collection("diari_bordo")
     await col.delete_many({})
-    col = await get_collection("checkpoints")
+    
+    col = await get_checkpoint_collection("checkpoints")
     await col.delete_many({})
-    col = await get_collection("checkpoint_writes")
+    col = await get_checkpoint_collection("checkpoint_writes")
     await col.delete_many({})
     
+    await db_log("INFO", "system", f"L'utente {message.from_user.id} ha lanciato il comando /nuke. Database svuotati.")
     await message.answer("💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione, Sessioni, Diari e Checkpoint azzerati.")
 
 @router.message(Command("annulla"))

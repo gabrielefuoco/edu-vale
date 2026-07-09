@@ -15,7 +15,7 @@ async def aggiungi_nota_utente(nome_utente: str, nota_testuale: str, config: Run
     """Aggiunge una nuova nota episodica a un utente per tracciare progressi o avvenimenti."""
     uid = config["configurable"]["user_id"]
     col_utenti = await get_collection(f"utenti", uid)
-    pattern = re.compile(nome_utente, re.IGNORECASE)
+    pattern = re.compile(f'^{re.escape(nome_utente)}$', re.IGNORECASE)
     
     user = await col_utenti.find_one({"nome": {"$regex": pattern}})
     if not user:

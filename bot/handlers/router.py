@@ -89,6 +89,8 @@ async def route_message(message: Message):
             async def send_msg(text):
                 await message.reply(text, parse_mode="HTML")
                 
+            await db_log("INFO", "chat", f"📩 Ricevuto da {user_id} in {message.message_thread_id}:\n{text}")
+                
             result = await invoke_with_backoff(
                 agent_config["graph"],
                 {"messages": [HumanMessage(content=text)]},
@@ -111,10 +113,12 @@ async def route_message(message: Message):
                         InlineKeyboardButton(text="❌ Annulla", callback_data="cancel_tools")
                     ]
                 ])
+                await db_log("INFO", "agent", f"⚠️ Richiesta approvazione tools:\n{tools_desc}")
                 await message.reply(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire le seguenti azioni:\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
             else:
                 # Nessuna interruzione, risposta finale
                 final_msg = result["messages"][-1]
+                await db_log("INFO", "chat", f"📤 Risposta dell'agente a {user_id}:\n{final_msg.content}")
                 try:
                     await message.reply(final_msg.content, parse_mode="Markdown")
                 except Exception:

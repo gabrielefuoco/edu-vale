@@ -3,6 +3,7 @@ from aiogram.types import CallbackQuery
 from langchain_core.messages import ToolMessage
 from bot.main_registry import AGENT_REGISTRY, _processing_locks
 from utils.helpers import invoke_with_backoff
+from utils.logger import db_log
 
 router = Router()
 
@@ -24,6 +25,7 @@ async def confirm_tools(callback: CallbackQuery):
     
     async with _processing_locks[thread_key]:
         try:
+            await db_log("INFO", "agent", f"Utente {user_id} ha CONFERMATO l'esecuzione dei tool.")
             # Riprendi l'esecuzione (valore None fa riprendere dal punto di interrupt)
             async def send_msg(text):
                 await callback.message.answer(text, parse_mode="HTML")
@@ -51,6 +53,8 @@ async def cancel_tools(callback: CallbackQuery):
     await callback.answer("Annullato")
     
     topic_id = callback.message.message_thread_id
+    user_id = str(callback.from_user.id)
+    await db_log("INFO", "agent", f"Utente {user_id} ha ANNULLATO l'esecuzione dei tool.")
     agent_config = AGENT_REGISTRY.get(topic_id, AGENT_REGISTRY[None])
     user_id = str(callback.from_user.id)
     thread_key = f"{user_id}_{topic_id}"
