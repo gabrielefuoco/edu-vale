@@ -3,11 +3,11 @@ from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from langchain_core.messages import HumanMessage
 from services.ai_service import transcribe_audio
-from utils.logger import db_log
-from utils.helpers import invoke_with_backoff
+from database.connection import get_collection, get_system_config
+from langchain_core.messages import HumanMessage, ToolMessage
 from bot.main_registry import AGENT_REGISTRY, _processing_locks
-from database.connection import get_system_config
-import os
+from utils.helpers import invoke_with_backoff, send_split_message
+from utils.logger import db_log
 
 router = Router()
 
@@ -86,16 +86,15 @@ async def route_message(message: Message):
             # LangGraph can keep it in state, but to ensure up-to-date data, we rely on the node logic.
             # Here we just pass the human message. The memory manager or agent node handles system prompt.
             
-            async def send_msg(text):
-                await message.reply(text, parse_mode="HTML")
-                
             await db_log("INFO", "chat", f"📩 Ricevuto da {user_id} in {message.message_thread_id}:\n{text}")
+            
+            status_msg = await message.reply("⏳ <i>Elaborazione in corso...</i>", parse_mode="HTML")
                 
             result = await invoke_with_backoff(
                 agent_config["graph"],
                 {"messages": [HumanMessage(content=text)]},
                 config,
-                send_msg
+                status_msg
             )
             
             # Controlla se il grafo è interrotto (aspetta conferma per i write_tools)
@@ -114,16 +113,23 @@ async def route_message(message: Message):
                     ]
                 ])
                 await db_log("INFO", "agent", f"⚠️ Richiesta approvazione tools:\n{tools_desc}")
-                await message.reply(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire le seguenti azioni:\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
+                try:
+                    await status_msg.edit_text(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire le seguenti azioni:\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
+                except Exception:
+                    await message.reply(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire le seguenti azioni:\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
             else:
                 # Nessuna interruzione, risposta finale
                 final_msg = result["messages"][-1]
                 await db_log("INFO", "chat", f"📤 Risposta dell'agente a {user_id}:\n{final_msg.content}")
-                try:
-                    await message.reply(final_msg.content, parse_mode="Markdown")
-                except Exception:
-                    await message.reply(final_msg.content)
+                await send_split_message(status_msg, final_msg.content, parse_mode="Markdown")
                 
         except Exception as e:
             await db_log("ERROR", "router", f"Errore durante l'esecuzione del grafo: {e}")
-            await message.reply("❌ Si è verificato un errore interno. Riprova.")
+            # Try to edit status msg to show error, otherwise reply
+            try:
+                if 'status_msg' in locals():
+                    await status_msg.edit_text("❌ Si è verificato un errore interno. Riprova.")
+                else:
+                    await message.reply("❌ Si è verificato un errore interno. Riprova.")
+            except Exception:
+                pass

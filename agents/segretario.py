@@ -21,7 +21,7 @@ def create_segretario(checkpointer):
     
     return create_agent(
         agent_name="segretario",
-        model_name="mistral-large-latest",
+        model_name="mistral-small-latest",
         system_prompt_builder=build_segretario_prompt,
         tools=tools,
         checkpointer=checkpointer,

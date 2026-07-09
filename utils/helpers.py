@@ -1,9 +1,31 @@
 import asyncio
 from typing import Callable, Any
 
-async def invoke_with_backoff(graph: Any, input_data: Any, config: dict, bot_message_func: Callable):
+async def send_split_message(status_msg: Any, text: str, parse_mode: str = "Markdown", chunk_size: int = 4000):
     """
-    Invokes a LangGraph with exponential backoff if a Rate Limit (429) occurs.
+    Splits a long text into chunks. 
+    The first chunk edits the status_msg.
+    Subsequent chunks are sent as replies to the chat.
+    """
+    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+    if not chunks:
+        return
+        
+    try:
+        await status_msg.edit_text(chunks[0], parse_mode=parse_mode)
+    except Exception:
+        await status_msg.edit_text(chunks[0]) # Fallback senza parse_mode
+        
+    for chunk in chunks[1:]:
+        try:
+            await status_msg.answer(chunk, parse_mode=parse_mode)
+        except Exception:
+            await status_msg.answer(chunk)
+
+async def invoke_with_backoff(graph: Any, input_data: Any, config: dict, status_msg: Any = None):
+    """
+    Invokes a LangGraph with exponential backoff se si verifica un Rate Limit (429).
+    Aggiorna status_msg se fornito.
     """
     max_retries = 4
     for attempt in range(max_retries):
@@ -14,10 +36,11 @@ async def invoke_with_backoff(graph: Any, input_data: Any, config: dict, bot_mes
             if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
                 if attempt < max_retries - 1:
                     wait_time = 3 * (2 ** attempt)  # 3, 6, 12 secondi
-                    try:
-                        await bot_message_func(f"⏳ <b>Attendi</b>, sto per risponderti...\n<i>(Il motore IA è temporaneamente saturo, nuovo tentativo tra {wait_time}s)</i>")
-                    except Exception:
-                        pass
+                    if status_msg:
+                        try:
+                            await status_msg.edit_text(f"⏳ <b>Attendi</b>, sto per elaborare...\n<i>(Il motore IA è saturo, nuovo tentativo tra {wait_time}s)</i>", parse_mode="HTML")
+                        except Exception:
+                            pass
                     await asyncio.sleep(wait_time)
                     continue
             raise e

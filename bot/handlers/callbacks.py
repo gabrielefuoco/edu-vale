@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from langchain_core.messages import ToolMessage
 from bot.main_registry import AGENT_REGISTRY, _processing_locks
-from utils.helpers import invoke_with_backoff
+from utils.helpers import invoke_with_backoff, send_split_message
 from utils.logger import db_log
 
 router = Router()
@@ -26,25 +26,21 @@ async def confirm_tools(callback: CallbackQuery):
     async with _processing_locks[thread_key]:
         try:
             await db_log("INFO", "agent", f"Utente {user_id} ha CONFERMATO l'esecuzione dei tool.")
+            await callback.message.edit_text("⏳ <i>Esecuzione tool in corso...</i>", parse_mode="HTML")
+            
             # Riprendi l'esecuzione (valore None fa riprendere dal punto di interrupt)
-            async def send_msg(text):
-                await callback.message.answer(text, parse_mode="HTML")
-                
             result = await invoke_with_backoff(
                 agent_config["graph"],
                 None,
                 config,
-                send_msg
+                callback.message
             )
             state = await agent_config["graph"].aget_state(config)
             if state.next and "write_tools" in state.next:
                 pass # Continua ad aspettare conferme (non dovrebbe succedere se abbiamo eseguito tutti i tool)
             else:
                 final_msg = result["messages"][-1]
-                try:
-                    await callback.message.edit_text(f"✅ **Eseguito**\n\n{final_msg.content}", parse_mode="Markdown")
-                except Exception:
-                    await callback.message.edit_text(f"✅ Eseguito\n\n{final_msg.content}")
+                await send_split_message(callback.message, f"✅ **Eseguito**\n\n{final_msg.content}", parse_mode="Markdown")
         except Exception as e:
             await callback.message.edit_text(f"❌ Errore durante l'esecuzione: {e}")
 

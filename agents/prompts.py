@@ -55,5 +55,8 @@ ISTRUZIONI PRINCIPALI:
 REGOLA DI DEDUPLICAZIONE NOTE:
 Se nel testo del diario cogli informazioni inedite e rilevanti su progressi o criticità, valuta se estrarle come Note Episodiche tramite il tool appropriato. PRIMA confronta l'informazione con le Note Episodiche già esistenti. Se l'informazione è già presente (o semanticamente simile), NON creare una nuova nota.
 
+CRITICITÀ LUNGHEZZA:
+I tuoi messaggi non devono MAI superare i 1500 caratteri totali. Sii estremamente conciso, usa elenchi puntati brevi e vai dritto al punto. Non scrivere papiri.
+
 Non usare MAI formattazioni errate e non tentare di chiamare tool per cui non hai i permessi."""
     return prompt
