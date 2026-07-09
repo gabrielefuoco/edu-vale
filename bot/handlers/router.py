@@ -88,6 +88,22 @@ async def route_message(message: Message):
             
             await db_log("INFO", "chat", f"📩 Ricevuto da {user_id} in {message.message_thread_id}:\n{text}")
             
+            # Controllo se il grafo è attualmente interrotto (richiesta tool in sospeso)
+            state = await agent_config["graph"].aget_state(config)
+            if state.next and "write_tools" in state.next:
+                # L'utente ha ignorato i bottoni di conferma e ha inviato un messaggio di testo
+                # Annulliamo automaticamente i tool in sospeso per evitare crash (message_order)
+                last_msg = state.values["messages"][-1]
+                if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+                    tool_messages = []
+                    for tc in last_msg.tool_calls:
+                        tool_messages.append(ToolMessage(
+                            tool_call_id=tc["id"],
+                            name=tc["name"],
+                            content="L'utente ha ignorato questa azione inviando un nuovo messaggio testuale. Operazione annullata."
+                        ))
+                    await agent_config["graph"].aupdate_state(config, {"messages": tool_messages}, as_node="write_tools")
+            
             status_msg = await message.reply("⏳ <i>Elaborazione in corso...</i>", parse_mode="HTML")
                 
             result = await invoke_with_backoff(

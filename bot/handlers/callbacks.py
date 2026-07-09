@@ -64,26 +64,37 @@ async def cancel_tools(callback: CallbackQuery):
     
     async with _processing_locks[thread_key]:
         try:
-            # Dobbiamo aggiornare lo stato in LangGraph per comunicare l'annullamento
-            # Raccogliamo l'ultima chiamata al tool
             state = await agent_config["graph"].aget_state(config)
+            
+            # Verifichiamo che ci sia un AIMessage con tool_calls prima di annullare
             last_msg = state.values["messages"][-1]
+            if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+                tool_messages = []
+                for tc in last_msg.tool_calls:
+                    tool_messages.append(ToolMessage(
+                        tool_call_id=tc["id"],
+                        name=tc["name"],
+                        content="L'utente ha annullato l'operazione."
+                    ))
+                
+                # Aggiorniamo lo stato bypassando il nodo write_tools
+                await agent_config["graph"].aupdate_state(config, {"messages": tool_messages}, as_node="write_tools")
             
-            tool_messages = []
-            for tc in last_msg.tool_calls:
-                tool_messages.append(ToolMessage(
-                    tool_call_id=tc["id"],
-                    name=tc["name"],
-                    content="L'utente ha annullato questa operazione."
-                ))
+            await callback.message.edit_text("⏳ <i>Annullamento in corso...</i>", parse_mode="HTML")
             
-            # Iniettiamo il finto risultato del tool e continuiamo come se il tool avesse restituito "annullato"
-            result = await agent_config["graph"].ainvoke({"messages": tool_messages}, config=config)
+            # Riprendiamo l'esecuzione del grafo
+            result = await invoke_with_backoff(
+                agent_config["graph"],
+                None,
+                config,
+                callback.message
+            )
             
-            final_msg = result["messages"][-1]
-            try:
-                await callback.message.edit_text(f"❌ **Azione Annullata**\n\n{final_msg.content}", parse_mode="Markdown")
-            except Exception:
-                await callback.message.edit_text(f"❌ Azione Annullata\n\n{final_msg.content}")
+            state = await agent_config["graph"].aget_state(config)
+            if state.next and "write_tools" in state.next:
+                pass
+            else:
+                final_msg = result["messages"][-1]
+                await send_split_message(callback.message, f"❌ **Azione Annullata**\n\n{final_msg.content}", parse_mode="HTML_from_Markdown")
         except Exception as e:
             await callback.message.edit_text(f"❌ Errore durante l'annullamento: {e}")
