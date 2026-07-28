@@ -23,6 +23,10 @@ async def confirm_tools(callback: CallbackQuery):
         }
     }
     
+    import asyncio
+    if thread_key not in _processing_locks:
+        _processing_locks[thread_key] = asyncio.Lock()
+        
     async with _processing_locks[thread_key]:
         try:
             await db_log("INFO", "agent", f"Utente {user_id} ha CONFERMATO l'esecuzione dei tool.")
@@ -62,6 +66,10 @@ async def cancel_tools(callback: CallbackQuery):
         }
     }
     
+    import asyncio
+    if thread_key not in _processing_locks:
+        _processing_locks[thread_key] = asyncio.Lock()
+        
     async with _processing_locks[thread_key]:
         try:
             state = await agent_config["graph"].aget_state(config)
@@ -98,3 +106,7 @@ async def cancel_tools(callback: CallbackQuery):
                 await send_split_message(callback.message, f"❌ **Azione Annullata**\n\n{final_msg.content}", parse_mode="HTML_from_Markdown")
         except Exception as e:
             await callback.message.edit_text(f"❌ Errore durante l'annullamento: {e}")
+
+    # Lock Cleanup
+    if thread_key in _processing_locks and not _processing_locks[thread_key].locked():
+        _processing_locks.pop(thread_key, None)
