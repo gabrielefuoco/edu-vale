@@ -138,7 +138,19 @@ async def route_message(message: Message):
                 # Il grafo si è interrotto prima di write_tools
                 # Estraiamo l'ultima richiesta di tool per farla approvare
                 last_msg = state.values["messages"][-1]
-                tools_desc = "\n".join([f"- <code>{tc['name']}</code>" for tc in last_msg.tool_calls])
+                
+                # Costruisci descrizione dettagliata con argomenti
+                tools_lines = []
+                for tc in last_msg.tool_calls:
+                    args = tc.get("args", {})
+                    # Filtra 'config' e campi interni, mostra solo i parametri utili
+                    readable_args = {k: v for k, v in args.items() if k != "config" and v is not None}
+                    if readable_args:
+                        args_str = ", ".join(f"<i>{k}</i>=<code>{v}</code>" for k, v in readable_args.items())
+                        tools_lines.append(f"• <b>{tc['name']}</b>\n  {args_str}")
+                    else:
+                        tools_lines.append(f"• <b>{tc['name']}</b>")
+                tools_desc = "\n".join(tools_lines)
                 
                 markup = InlineKeyboardMarkup(inline_keyboard=[
                     [
@@ -148,9 +160,9 @@ async def route_message(message: Message):
                 ])
                 await db_log("INFO", "agent", f"⚠️ Richiesta approvazione tools:\n{tools_desc}")
                 try:
-                    await status_msg.edit_text(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire le seguenti azioni:\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
+                    await status_msg.edit_text(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire:\n\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
                 except Exception:
-                    await message.reply(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire le seguenti azioni:\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
+                    await message.reply(f"⚠️ <b>Richiesta di conferma</b>\nL'agente vuole eseguire:\n\n{tools_desc}", reply_markup=markup, parse_mode="HTML")
             else:
                 # Nessuna interruzione, risposta finale
                 final_msg = result["messages"][-1]
