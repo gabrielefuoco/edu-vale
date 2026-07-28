@@ -6,10 +6,25 @@ from langchain_core.messages import HumanMessage
 groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 mistral_llm = ChatMistralAI(model="mistral-large-latest", temperature=0)
 
-async def transcribe_audio(file_path: str) -> str:
+async def transcribe_audio(file_path: str, known_names: list[str] = None) -> str:
+    """Trascrive audio con Groq Whisper, iniettando nomi noti come contesto."""
+    names_hint = ""
+    if known_names:
+        names_hint = f" Nomi noti: {', '.join(known_names)}."
+    
+    prompt = (
+        "Trascrizione in lingua italiana di un messaggio vocale di un operatore educativo. "
+        "Preserva con massima precisione nomi propri di persona, date, orari e luoghi. "
+        "Non abbreviare, non abbellire, non tradurre in altre lingue."
+        f"{names_hint}"
+    )
+    
     with open(file_path, "rb") as file:
         transcription = await groq_client.audio.transcriptions.create(
-            file=(file_path, file.read()), model="whisper-large-v3", prompt="Trascrizione fedele e oggettiva di appunti tecnici. Nessun abbellimento testuale, preserva con massima precisione nomi, date e orari."
+            file=(file_path, file.read()),
+            model="whisper-large-v3",
+            language="it",
+            prompt=prompt,
         )
     return transcription.text
 

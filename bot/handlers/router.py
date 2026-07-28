@@ -12,13 +12,13 @@ from utils.logger import db_log
 
 router = Router()
 
-async def transcribe_voice(message: Message) -> str:
+async def transcribe_voice(message: Message, known_names: list[str] = None) -> str:
     file_id = message.voice.file_id
     file = await message.bot.get_file(file_id)
     file_path = f"tmp_{file_id}.ogg"
     await message.bot.download_file(file.file_path, file_path)
     try:
-        text = await transcribe_audio(file_path)
+        text = await transcribe_audio(file_path, known_names=known_names)
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -55,7 +55,16 @@ async def route_message(message: Message):
         await message.bot.send_chat_action(chat_id=message.chat.id, action="typing", message_thread_id=topic_id)
         
         if message.voice:
-            text = await transcribe_voice(message)
+            # Carica i nomi noti dal DB per guidare la trascrizione
+            user_id = str(message.from_user.id)
+            try:
+                col_utenti = await get_collection("utenti", uid=user_id)
+                utenti_db = await col_utenti.find({}, {"nome": 1}).to_list(length=100)
+                known_names = [u["nome"] for u in utenti_db if u.get("nome")]
+            except Exception:
+                known_names = []
+            
+            text = await transcribe_voice(message, known_names=known_names)
             try:
                 await message.reply(f"🎙️ <b>Trascrizione:</b> {text}", parse_mode="HTML")
             except Exception:

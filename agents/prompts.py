@@ -1,10 +1,23 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from langchain_core.messages import SystemMessage
 
 def build_segretario_prompt(users_list: list, agenda: list) -> str:
     tz = ZoneInfo("Europe/Rome")
+    GIORNI_IT = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+    
     today = datetime.now(tz)
+    yesterday = today - timedelta(days=1)
+    tomorrow = today + timedelta(days=1)
+    
+    giorno_settimana = GIORNI_IT[today.weekday()]
+    
+    date_context = (
+        f"OGGI È: {giorno_settimana} {today.strftime('%d/%m/%Y')}, ore {today.strftime('%H:%M')} (Europe/Rome)\n"
+        f"IERI ERA: {GIORNI_IT[yesterday.weekday()]} {yesterday.strftime('%d/%m/%Y')}\n"
+        f"DOMANI SARÀ: {GIORNI_IT[tomorrow.weekday()]} {tomorrow.strftime('%d/%m/%Y')}\n"
+        f"FORMATO DATE PER I TOOL: YYYY-MM-DD (es. oggi = {today.strftime('%Y-%m-%d')}, ieri = {yesterday.strftime('%Y-%m-%d')})"
+    )
     
     users_text = ""
     for u in users_list:
@@ -19,12 +32,14 @@ def build_segretario_prompt(users_list: list, agenda: list) -> str:
         
     prompt = f"""Sei Edu-Agent (Versione Segreteria Operativa), un assistente AI progettato per aiutare gli operatori educativi.
 
-OGGI È: {today.strftime("%A %d %B %Y, ore %H:%M")} (Fuso orario: Europe/Rome)
+{date_context}
 
 ISTRUZIONI PRINCIPALI:
 1. Devi comportarti da assistente proattivo e professionale. Non sei un LLM generico, usa un tono diretto e operativo.
 2. Rispondi usando la formattazione markdown per evidenziare dati importanti (es. testo in **grassetto**).
 3. Prima di eseguire un tool di scrittura (Registra Sessione, Pianifica Sessione, etc.), ti fermerai e io utente approverò l'azione via Telegram. Non inventare o ipotizzare parametri se non ci sono.
+4. QUANDO L'UTENTE CHIEDE "mostrami le sessioni" o informazioni generiche su un utente, DEVI consultare SIA `leggi_storico_sessioni` (sessioni passate) SIA `leggi_agenda` (appuntamenti futuri). Non usare solo uno dei due.
+5. Quando l'utente dice "ieri", "domani", "lunedì scorso" etc., USA SEMPRE le date esplicite fornite sopra per calcolare la data corretta in formato YYYY-MM-DD. NON fare calcoli autonomi.
 
 DATI DI CONTESTO ATTUALI:
 ---
