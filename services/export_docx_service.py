@@ -46,26 +46,14 @@ async def export_diari_to_docx(user_id: str, utente: str = None, data_inizio: st
     # Crea il documento
     document = Document()
     
-    # Stile Titolo principale
-    heading = document.add_heading('Rapporto Diari di Bordo', 0)
-    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    if utente:
-        p = document.add_paragraph(f"Utente: ")
-        p.add_run(utente).bold = True
-        
-    if data_inizio or data_fine:
-        date_str = f"Dal {data_inizio or 'inizio'} al {data_fine or 'oggi'}"
-        document.add_paragraph(date_str)
-        
-    document.add_paragraph(f"Totale diari estratti: {len(diari)}")
-    document.add_page_break()
+    # Non creiamo una pagina iniziale, iniziamo direttamente con i diari.
     
     # Inserisci i diari
     for d in diari:
         # Titolo diario (Data - Utente)
+        data_diario = d.get('data', 'N/A')
         titolo_diario = document.add_heading(level=2)
-        titolo_diario.add_run(f"Data: {d.get('data', 'N/A')}").bold = True
+        titolo_diario.add_run(f"Diario del {data_diario}").bold = True
         
         if not utente:
             p_user = document.add_paragraph("Utente: ")
@@ -78,6 +66,10 @@ async def export_diari_to_docx(user_id: str, utente: str = None, data_inizio: st
             line = line.strip()
             if not line:
                 document.add_paragraph()
+                continue
+                
+            # Salta la linea della data se già presente nel testo generato (per evitare duplicati)
+            if line.lower().startswith('data:') or line.lower().startswith('**data:**'):
                 continue
             
             # Gestione bullet point basica
