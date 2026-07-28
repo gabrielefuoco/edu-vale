@@ -13,7 +13,7 @@ async def export_sessions_to_excel(user_id: str, filename: str = None) -> str:
         
     filepath = os.path.abspath(os.path.join(os.getcwd(), filename))
     
-    col = await get_collection("diario_sessioni")
+    col = await get_collection("diario_sessioni", uid=user_id)
     sessions = await col.find().sort("data", 1).to_list(length=2000)
     
     wb = Workbook()

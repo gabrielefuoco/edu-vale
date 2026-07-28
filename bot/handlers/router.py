@@ -1,4 +1,5 @@
 import asyncio
+import os
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from langchain_core.messages import HumanMessage
@@ -25,6 +26,10 @@ async def transcribe_voice(message: Message) -> str:
 
 @router.message((F.text & ~F.text.startswith("/")) | F.voice)
 async def route_message(message: Message):
+    if message.chat.type == "private":
+        await message.reply("ℹ️ Per interagire con me, scrivi nel gruppo nei topic dedicati.")
+        return
+
     topic_id = message.message_thread_id
     
     # Se il topic non è registrato, usa l'agente di default (chiave None)
@@ -67,6 +72,10 @@ async def route_message(message: Message):
         # Se non è stato ancora configurato, ignoriamo qualsiasi messaggio non-comando
         if not segreteria_id or not diario_id:
             await db_log("DEBUG", "router", "Ignorato: Configurazione non trovata.")
+            try:
+                await message.reply("⚠️ Esegui /setup per configurare i topic.")
+            except Exception:
+                pass
             return
             
         # Ignora i messaggi nei topic non gestiti (incluso il topic Generale)
@@ -141,7 +150,6 @@ async def route_message(message: Message):
                 
         except Exception as e:
             await db_log("ERROR", "router", f"Errore durante l'esecuzione del grafo: {e}")
-            # Try to edit status msg to show error, otherwise reply
             try:
                 if 'status_msg' in locals():
                     await status_msg.edit_text("❌ Si è verificato un errore interno. Riprova.")
@@ -149,3 +157,7 @@ async def route_message(message: Message):
                     await message.reply("❌ Si è verificato un errore interno. Riprova.")
             except Exception:
                 pass
+                
+    # Lock Cleanup
+    if thread_key in _processing_locks and not _processing_locks[thread_key].locked():
+        _processing_locks.pop(thread_key, None)

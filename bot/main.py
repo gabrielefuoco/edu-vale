@@ -146,6 +146,7 @@ async def main():
     
     # Middleware
     dp.message.middleware(AuthMiddleware())
+    dp.callback_query.middleware(AuthMiddleware())
     
     # Setup LangGraph Agents and Registry
     checkpointer = await get_checkpointer()

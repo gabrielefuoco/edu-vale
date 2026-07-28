@@ -13,7 +13,7 @@ async def cerca_utenti(query: str, config: RunnableConfig) -> str:
     """Cerca nel database il nome completo di un utente. Restituisce anche il suo ID e la lista delle note episodiche con i relativi ID."""
     uid = config["configurable"]["user_id"]
     col_utenti = await get_collection(f"utenti", uid)
-    pattern = re.compile(query, re.IGNORECASE)
+    pattern = re.compile(re.escape(query), re.IGNORECASE)
     cursor = col_utenti.find({"nome": {"$regex": pattern}})
     utenti = await cursor.to_list(length=10)
     
@@ -43,7 +43,8 @@ async def leggi_storico_sessioni(utente: str, limite: int, config: RunnableConfi
     """Legge le sessioni passate di un utente per ricavare contesto. Restituisce anche l'id di ogni sessione per eventuali modifiche."""
     uid = config["configurable"]["user_id"]
     col_sessioni = await get_collection(f"diario_sessioni", uid)
-    cursor = col_sessioni.find({"utente_id": utente}).sort("data", -1).limit(limite)
+    pattern = re.compile(f'^{re.escape(utente)}$', re.IGNORECASE)
+    cursor = col_sessioni.find({"utente_id": {"$regex": pattern}}).sort("data", -1).limit(limite)
     sessioni = await cursor.to_list(length=limite)
     
     if not sessioni:
@@ -87,7 +88,8 @@ async def leggi_diari_bordo(utente: str, limite: int, config: RunnableConfig) ->
     """Legge i diari di bordo completi (dettagliati) passati di un utente. Restituisce anche l'ID per eventuali modifiche o eliminazioni."""
     uid = config["configurable"]["user_id"]
     col_diari = await get_collection(f"diari_bordo", uid)
-    cursor = col_diari.find({"utente": utente}).sort("data", -1).limit(limite)
+    pattern = re.compile(f'^{re.escape(utente)}$', re.IGNORECASE)
+    cursor = col_diari.find({"utente": {"$regex": pattern}}).sort("data", -1).limit(limite)
     diari = await cursor.to_list(length=limite)
     
     if not diari:

@@ -6,7 +6,9 @@ from bot.middlewares import current_user_id
 
 load_dotenv()
 
-MONGO_URI = os.getenv("MONGODB_URI", "")
+from config import settings
+
+MONGO_URI = settings.MONGODB_URI
 client = AsyncIOMotorClient(MONGO_URI) if MONGO_URI else None
 
 async def get_db(uid: str = None):

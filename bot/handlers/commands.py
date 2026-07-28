@@ -184,25 +184,26 @@ async def cmd_reset(message: Message):
 
 @router.message(Command("nuke"))
 async def cmd_nuke(message: Message):
-    # Reset DB
-    col = await get_collection("chat_history")
-    await col.delete_many({})
-    col = await get_collection("utenti")
-    await col.delete_many({})
-    col = await get_collection("programmazione")
-    await col.delete_many({})
-    col = await get_collection("diario_sessioni")
-    await col.delete_many({})
-    col = await get_collection("diari_bordo")
-    await col.delete_many({})
+    allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
+    allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
+    uids_to_clear = list(set(allowed_ids + ["default"]))
     
+    # Reset DB for all users
+    for uid in uids_to_clear:
+        for col_name in ["chat_history", "utenti", "programmazione", "diario_sessioni", "diari_bordo"]:
+            col = await get_collection(col_name, uid=uid)
+            await col.delete_many({})
+    
+    # Reset all checkpoints globally
     col = await get_checkpoint_collection("checkpoints")
     await col.delete_many({})
     col = await get_checkpoint_collection("checkpoint_writes")
     await col.delete_many({})
     
-    await db_log("INFO", "system", f"L'utente {message.from_user.id} ha lanciato il comando /nuke. Database svuotati.")
-    await message.answer("💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione, Sessioni, Diari e Checkpoint azzerati.")
+    await db_log("INFO", "system", f"L'utente {message.from_user.id} ha lanciato il comando /nuke. Database svuotati per tutti gli utenti.")
+    await message.answer("💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione, Sessioni, Diari e Checkpoint di TUTTI gli utenti sono stati azzerati.")
+
+
 
 @router.message(Command("annulla"))
 async def cmd_annulla(message: Message):

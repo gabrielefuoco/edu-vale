@@ -3,11 +3,16 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# Setup console logger
+from logging.handlers import RotatingFileHandler
+
+# Setup console logger and rotating file logger
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - [%(name)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        RotatingFileHandler("app.log", maxBytes=5*1024*1024, backupCount=2, encoding="utf-8")
+    ]
 )
 
 logger = logging.getLogger("edu_agent")

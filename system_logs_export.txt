@@ -1,0 +1,5 @@
+[2026-07-08 21:45:31] DEBUG [router] - Messaggio da 1238244166. Thread: 3. SysConfig: Seg=3, Diar=4
+[2026-07-08 21:46:09] DEBUG [router] - Messaggio da 1238244166. Thread: 3. SysConfig: Seg=3, Diar=4
+[2026-07-08 21:46:56] DEBUG [router] - Messaggio da 1238244166. Thread: 4. SysConfig: Seg=3, Diar=4
+[2026-07-08 21:47:39] DEBUG [router] - Messaggio da 1238244166. Thread: 4. SysConfig: Seg=3, Diar=4
+[2026-07-08 21:48:41] DEBUG [router] - Messaggio da 1238244166. Thread: 4. SysConfig: Seg=3, Diar=4

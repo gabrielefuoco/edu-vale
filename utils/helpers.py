@@ -8,15 +8,13 @@ def markdown_to_html(text: str) -> str:
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     
     # Headers trasformati in grassetto (rimuoviamo eventuali ** interni per non annidarli)
-    def header_repl(match):
-        content = match.group(2).replace('**', '').replace('*', '')
-        return f"<b>{content}</b>"
-    text = re.sub(r'^(#{1,6})\s+(.+)$', header_repl, text, flags=re.MULTILINE)
+    text = re.sub(r'^(#{1,6})\s+(.+)$', r'<b>\2</b>', text, flags=re.MULTILINE)
     
     # Bold
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
-    # Italic
-    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text, flags=re.DOTALL)
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # Italic (solo singolo asterisco non preceduto/seguito da un altro asterisco o carattere parola all'interno)
+    # Utilizziamo un semplice escape per evitare problemi
+    text = re.sub(r'(?<!\*)\*([^\*]+?)\*(?!\*)', r'<i>\1</i>', text)
     return text
 
 async def send_split_message(status_msg: Any, text: str, parse_mode: str = "Markdown", chunk_size: int = 4000):
@@ -57,7 +55,8 @@ async def invoke_with_backoff(graph: Any, input_data: Any, config: dict, status_
             error_str = str(e).lower()
             if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
                 if attempt < max_retries - 1:
-                    wait_time = 3 * (2 ** attempt)  # 3, 6, 12 secondi
+                    import random
+                    wait_time = (3 * (2 ** attempt)) + random.uniform(0.1, 1.0)
                     if status_msg:
                         try:
                             await status_msg.edit_text(f"⏳ <b>Attendi</b>, sto per elaborare...\n<i>(Il motore IA è saturo, nuovo tentativo tra {wait_time}s)</i>", parse_mode="HTML")

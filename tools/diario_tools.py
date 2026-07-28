@@ -21,8 +21,8 @@ async def aggiungi_nota_utente(nome_utente: str, nota_testuale: str, config: Run
     if not user:
         return f"Errore: Utente '{nome_utente}' non trovato."
         
-    note = user.get("note", [])
-    new_id = max([n.get("id", 0) for n in note], default=0) + 1
+    import time
+    new_id = int(time.time() * 1000)
     nuova_nota = {"id": new_id, "testo": nota_testuale}
     
     await col_utenti.update_one(

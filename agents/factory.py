@@ -36,9 +36,7 @@ def create_agent(
     async def memory_manager(state: AgentState):
         messages = state["messages"]
         total_chars = sum(len(str(m.content)) for m in messages)
-        # Semplice summarization logic o trimming
         if total_chars > 25000 and len(messages) > 4:
-            # Mantieni il system prompt (se presente come primo), poi un messaggio riassuntivo e gli ultimi 3 messaggi
             return {"messages": [SystemMessage(content=f"Il contesto è stato troncato per motivi di memoria. Mantieni il focus sulle ultime richieste.")] + messages[-3:]}
         return {}
 
@@ -63,14 +61,11 @@ def create_agent(
             
         sys_msg = SystemMessage(content=sys_text)
         
-        # 2. Inseriamo o sostituiamo il SystemMessage come PRIMO messaggio
-        if messages and isinstance(messages[0], SystemMessage):
-            messages[0] = sys_msg
-        else:
-            messages.insert(0, sys_msg)
+        # 2. Rimuoviamo eventuali SystemMessage precedenti per evitare conflitti o accumuli
+        filtered_messages = [m for m in messages if not isinstance(m, SystemMessage)]
             
-        # 3. Invochiamo il modello (il fallback pydantic manuale è stato rimosso)
-        response = await llm_with_tools.ainvoke(messages)
+        # 3. Invochiamo il modello (il system prompt viene prepeso al volo)
+        response = await llm_with_tools.ainvoke([sys_msg] + filtered_messages)
         return {"messages": [response]}
 
     # 3. Router
@@ -81,12 +76,23 @@ def create_agent(
         if not getattr(last_message, "tool_calls", None):
             return "end"
             
-        # Classifica la prima tool_call (in un caso reale servirebbe gestirle tutte)
-        first_tool_name = last_message.tool_calls[0]["name"]
+        # Sicurezza per loop infiniti (es. troppe chiamate tool consecutive)
+        # Contiamo quanti AIMessage con tool_calls ci sono senza un HumanMessage in mezzo
+        consecutive_tool_calls = 0
+        for m in reversed(messages):
+            if isinstance(m, HumanMessage):
+                break
+            if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+                consecutive_tool_calls += 1
+                
+        if consecutive_tool_calls > max_iterations:
+            return "end"
+            
+        has_write = any(tc["name"] in write_names for tc in last_message.tool_calls)
         
-        if first_tool_name in write_names:
+        if has_write:
             return "write_tools"
-        elif first_tool_name in read_names:
+        elif last_message.tool_calls:
             return "read_tools"
             
         return "end"
@@ -96,20 +102,20 @@ def create_agent(
     workflow.add_node("memory", memory_manager)
     workflow.add_node("agent", call_model)
     
-    if read_tools:
-        workflow.add_node("read_tools", ToolNode(read_tools))
+    if tools:
+        # Usiamo tutti i tools per entrambi i nodi così in caso di chiamate miste il ToolNode non va in errore
+        workflow.add_node("read_tools", ToolNode(tools))
         workflow.add_edge("read_tools", "agent")
         
-    if write_tools:
-        workflow.add_node("write_tools", ToolNode(write_tools))
+        workflow.add_node("write_tools", ToolNode(tools))
         workflow.add_edge("write_tools", "agent")
 
     workflow.set_entry_point("memory")
     workflow.add_edge("memory", "agent")
     
     workflow.add_conditional_edges("agent", should_continue, {
-        "read_tools": "read_tools" if read_tools else END,
-        "write_tools": "write_tools" if write_tools else END,
+        "read_tools": "read_tools" if tools else END,
+        "write_tools": "write_tools" if tools else END,
         "end": END
     })
 

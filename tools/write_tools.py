@@ -79,16 +79,17 @@ async def crea_utente(nome: str, config: RunnableConfig, ore_settimanali: float 
 
 class EliminaSessionePianificataArgs(BaseModel):
     Data: str = Field(description="Data dell'appuntamento (YYYY-MM-DD)", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    Ora_Inizio: str = Field(description="Ora di inizio dell'appuntamento (HH:MM)", pattern=r"^\d{2}:\d{2}$")
     Utente: str = Field(description="Nome dell'utente")
 
 @tool(args_schema=EliminaSessionePianificataArgs)
-async def elimina_sessione_pianificata(Data: str, Utente: str, config: RunnableConfig) -> str:
+async def elimina_sessione_pianificata(Data: str, Ora_Inizio: str, Utente: str, config: RunnableConfig) -> str:
     """Annulla e rimuove un appuntamento futuro precedentemente pianificato."""
     uid = config["configurable"]["user_id"]
     col_prog = await get_collection(f"programmazione", uid)
     pattern = re.compile(f'^{re.escape(Utente)}$', re.IGNORECASE)
     
-    res = await col_prog.delete_one({"data": Data, "utente_id": {"$regex": pattern}})
+    res = await col_prog.delete_one({"data": Data, "ora_inizio": Ora_Inizio, "utente_id": {"$regex": pattern}})
     if res.deleted_count > 0:
         return f"✅ Appuntamento rimosso."
     else:
@@ -123,18 +124,19 @@ async def modifica_utente(nome_utente: str, config: RunnableConfig, nuovo_nome: 
             col_sess = await get_collection("diario_sessioni", uid)
             await col_sess.update_many({"utente_id": {"$regex": pattern}}, {"$set": {"utente_id": nuovo_nome}})
             col_prog = await get_collection("programmazione", uid)
-            await col_prog.update_many({"utente": {"$regex": pattern}}, {"$set": {"utente": nuovo_nome}})
-            msg += " Sessioni e appuntamenti associati sono stati rinominati."
+            await col_prog.update_many({"utente_id": {"$regex": pattern}}, {"$set": {"utente_id": nuovo_nome}})
+            col_diari = await get_collection("diari_bordo", uid)
+            await col_diari.update_many({"utente": {"$regex": pattern}}, {"$set": {"utente": nuovo_nome}})
+            msg += " Sessioni, appuntamenti e diari associati sono stati rinominati."
         return msg
     return "⚠️ Utente non trovato o dati identici."
 
 class EliminaUtenteArgs(BaseModel):
     nome_utente: str = Field(description="Nome esatto dell'utente da eliminare")
-    elimina_tutto: bool = Field(default=False, description="Se True, elimina anche tutte le sessioni e appuntamenti associati")
 
 @tool(args_schema=EliminaUtenteArgs)
-async def elimina_utente(nome_utente: str, config: RunnableConfig, elimina_tutto: bool = False) -> str:
-    """Elimina definitivamente un utente dal database. ATTENZIONE: azione irreversibile."""
+async def elimina_utente(nome_utente: str, config: RunnableConfig) -> str:
+    """Elimina definitivamente un utente dal database e tutti i dati associati. ATTENZIONE: azione irreversibile."""
     uid = config["configurable"]["user_id"]
     col_utenti = await get_collection("utenti", uid)
     pattern = re.compile(f"^{re.escape(nome_utente)}$", re.IGNORECASE)
@@ -142,17 +144,19 @@ async def elimina_utente(nome_utente: str, config: RunnableConfig, elimina_tutto
     res = await col_utenti.delete_one({"nome": {"$regex": pattern}})
     if res.deleted_count > 0:
         msg = f"✅ Utente '{nome_utente}' eliminato."
-        if elimina_tutto:
-            col_sess = await get_collection("diario_sessioni", uid)
-            await col_sess.delete_many({"utente_id": {"$regex": pattern}})
-            col_prog = await get_collection("programmazione", uid)
-            await col_prog.delete_many({"utente": {"$regex": pattern}})
-            msg += " Eliminate anche tutte le sessioni e appuntamenti associati."
+        col_sess = await get_collection("diario_sessioni", uid)
+        await col_sess.delete_many({"utente_id": {"$regex": pattern}})
+        col_prog = await get_collection("programmazione", uid)
+        await col_prog.delete_many({"utente_id": {"$regex": pattern}})
+        col_diari = await get_collection("diari_bordo", uid)
+        await col_diari.delete_many({"utente": {"$regex": pattern}})
+        msg += " Eliminate anche tutte le sessioni, appuntamenti e diari associati."
         return msg
     return "⚠️ Utente non trovato."
 
 class ModificaSessionePianificataArgs(BaseModel):
     Data_Attuale: str = Field(description="Data attuale dell'appuntamento (YYYY-MM-DD)", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    Ora_Inizio_Attuale: str = Field(description="Ora di inizio attuale (HH:MM)", pattern=r"^\d{2}:\d{2}$")
     Utente: str = Field(description="Nome dell'utente")
     Nuova_Data: Optional[str] = Field(default=None, description="Nuova data (YYYY-MM-DD)", pattern=r"^\d{4}-\d{2}-\d{2}$")
     Nuova_Ora_Inizio: Optional[str] = Field(default=None, description="Nuovo orario inizio (HH:MM)", pattern=r"^\d{2}:\d{2}$")
@@ -160,7 +164,7 @@ class ModificaSessionePianificataArgs(BaseModel):
     Nuovo_Luogo: Optional[str] = Field(default=None, description="Nuovo luogo")
 
 @tool(args_schema=ModificaSessionePianificataArgs)
-async def modifica_sessione_pianificata(Data_Attuale: str, Utente: str, config: RunnableConfig, Nuova_Data: str = None, Nuova_Ora_Inizio: str = None, Nuova_Ora_Fine: str = None, Nuovo_Luogo: str = None) -> str:
+async def modifica_sessione_pianificata(Data_Attuale: str, Ora_Inizio_Attuale: str, Utente: str, config: RunnableConfig, Nuova_Data: str = None, Nuova_Ora_Inizio: str = None, Nuova_Ora_Fine: str = None, Nuovo_Luogo: str = None) -> str:
     """Modifica un appuntamento futuro già pianificato."""
     uid = config["configurable"]["user_id"]
     col_prog = await get_collection("programmazione", uid)
@@ -175,7 +179,7 @@ async def modifica_sessione_pianificata(Data_Attuale: str, Utente: str, config: 
     if not update_doc:
         return "Nessuna modifica specificata."
     
-    res = await col_prog.update_one({"data": Data_Attuale, "utente_id": {"$regex": pattern}}, {"$set": update_doc})
+    res = await col_prog.update_one({"data": Data_Attuale, "ora_inizio": Ora_Inizio_Attuale, "utente_id": {"$regex": pattern}}, {"$set": update_doc})
     if res.modified_count > 0:
         return "✅ Appuntamento modificato."
     return "⚠️ Appuntamento non trovato."
@@ -241,19 +245,14 @@ async def modifica_nota_utente(nome_utente: str, id_nota: int, nuovo_testo: str,
     if not user:
         return f"Errore: Utente '{nome_utente}' non trovato."
     
-    note = user.get("note", [])
-    found = False
-    for n in note:
-        if n.get("id") == id_nota:
-            n["testo"] = nuovo_testo
-            found = True
-            break
+    res = await col_utenti.update_one(
+        {"_id": user["_id"], "note.id": id_nota}, 
+        {"$set": {"note.$.testo": nuovo_testo}}
+    )
     
-    if not found:
-        return f"⚠️ Nota con ID {id_nota} non trovata."
-    
-    await col_utenti.update_one({"_id": user["_id"]}, {"$set": {"note": note}})
-    return f"✅ Nota {id_nota} aggiornata."
+    if res.modified_count > 0:
+        return f"✅ Nota {id_nota} aggiornata."
+    return f"⚠️ Nota con ID {id_nota} non trovata."
 
 class EliminaNotaUtenteArgs(BaseModel):
     nome_utente: str = Field(description="Nome dell'utente")
@@ -270,11 +269,11 @@ async def elimina_nota_utente(nome_utente: str, id_nota: int, config: RunnableCo
     if not user:
         return f"Errore: Utente '{nome_utente}' non trovato."
     
-    note = user.get("note", [])
-    new_notes = [n for n in note if n.get("id") != id_nota]
+    res = await col_utenti.update_one(
+        {"_id": user["_id"]}, 
+        {"$pull": {"note": {"id": id_nota}}}
+    )
     
-    if len(new_notes) == len(note):
-        return f"⚠️ Nota con ID {id_nota} non trovata."
-    
-    await col_utenti.update_one({"_id": user["_id"]}, {"$set": {"note": new_notes}})
-    return f"✅ Nota {id_nota} eliminata."
+    if res.modified_count > 0:
+        return f"✅ Nota {id_nota} eliminata."
+    return f"⚠️ Nota con ID {id_nota} non trovata."

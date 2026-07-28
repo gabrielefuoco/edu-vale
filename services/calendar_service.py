@@ -5,8 +5,11 @@ def generate_ics_file(date_str: str, start_time: str, end_time: str, user_name: 
     c = Calendar()
     e = Event()
     e.name = f"Sessione Edu: {user_name}"
-    e.begin = f"{date_str} {start_time}:00"
-    e.end = f"{date_str} {end_time}:00"
+    try:
+        e.begin = f"{date_str} {start_time or '00:00'}:00"
+        e.end = f"{date_str} {end_time or '23:59'}:00"
+    except Exception:
+        e.make_all_day()
     e.location = location or ""
     c.events.add(e)
     
