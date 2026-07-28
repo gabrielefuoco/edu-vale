@@ -15,3 +15,4 @@ pytest-asyncio>=0.23.0
 mongomock-motor>=0.0.32
 tzdata
 pydantic-settings
+python-docx>=1.1.2

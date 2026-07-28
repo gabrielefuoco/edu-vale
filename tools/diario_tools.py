@@ -92,3 +92,44 @@ async def elimina_diario_bordo(id_diario: str, config: RunnableConfig) -> str:
     if result.deleted_count == 0:
         return f"Errore: Diario con ID '{id_diario}' non trovato."
     return f"🗑️ Diario di bordo (ID {id_diario}) eliminato con successo."
+
+
+class EsportaDiariArgs(BaseModel):
+    utente: Optional[str] = Field(default=None, description="Nome dell'utente di cui esportare i diari (opzionale, se vuoto esporta tutti)")
+    data_inizio: Optional[str] = Field(default=None, description="Data di inizio in formato YYYY-MM-DD (opzionale)")
+    data_fine: Optional[str] = Field(default=None, description="Data di fine in formato YYYY-MM-DD (opzionale)")
+
+@tool(args_schema=EsportaDiariArgs)
+async def esporta_diari_docx(config: RunnableConfig, utente: str = None, data_inizio: str = None, data_fine: str = None) -> str:
+    """Esporta i diari di bordo in formato Word (.docx) e li invia direttamente all'utente in chat. Usa questo tool quando l'utente ti chiede di scaricare o esportare i diari."""
+    from services.export_docx_service import export_diari_to_docx
+    import os
+    from aiogram.types import FSInputFile
+    
+    uid = config["configurable"]["user_id"]
+    bot = config["configurable"].get("bot")
+    chat_id = config["configurable"].get("chat_id")
+    
+    if not bot or not chat_id:
+        return "Errore: impossibile inviare il file (contesto Telegram mancante)."
+        
+    filepath = await export_diari_to_docx(
+        user_id=uid,
+        utente=utente,
+        data_inizio=data_inizio,
+        data_fine=data_fine
+    )
+    
+    if not filepath:
+        return f"Nessun diario di bordo trovato con i filtri specificati (utente: {utente}, periodo: {data_inizio} - {data_fine})."
+        
+    try:
+        doc = FSInputFile(filepath)
+        await bot.send_document(chat_id=chat_id, document=doc, caption="Ecco il documento Word con i diari esportati!")
+        os.remove(filepath)
+        return "Esportazione completata. Il file DOCX è stato inviato all'utente con successo."
+    except Exception as e:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        return f"Errore durante l'invio del file: {str(e)}"
+

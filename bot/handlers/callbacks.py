@@ -20,6 +20,8 @@ async def confirm_tools(callback: CallbackQuery):
         "configurable": {
             "thread_id": thread_key,
             "user_id": user_id,
+            "bot": callback.message.bot,
+            "chat_id": callback.message.chat.id
         }
     }
     
@@ -63,6 +65,8 @@ async def cancel_tools(callback: CallbackQuery):
         "configurable": {
             "thread_id": thread_key,
             "user_id": user_id,
+            "bot": callback.message.bot,
+            "chat_id": callback.message.chat.id
         }
     }
     

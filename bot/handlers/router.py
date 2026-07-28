@@ -96,6 +96,8 @@ async def route_message(message: Message):
             "configurable": {
                 "thread_id": thread_key,
                 "user_id": user_id,
+                "bot": message.bot,
+                "chat_id": message.chat.id
             }
         }
         

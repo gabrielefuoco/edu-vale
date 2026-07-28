@@ -7,7 +7,7 @@ from tools.write_tools import (
     modifica_sessione_pianificata, modifica_sessione_passata,
     elimina_sessione_passata, modifica_nota_utente, elimina_nota_utente
 )
-from tools.diario_tools import aggiungi_nota_utente
+from tools.diario_tools import aggiungi_nota_utente, esporta_diari_docx
 
 def create_segretario(checkpointer):
     tools = [
@@ -16,7 +16,7 @@ def create_segretario(checkpointer):
         elimina_utente, modifica_utente, elimina_sessione_pianificata,
         modifica_sessione_pianificata, modifica_sessione_passata,
         elimina_sessione_passata, aggiungi_nota_utente,
-        modifica_nota_utente, elimina_nota_utente
+        modifica_nota_utente, elimina_nota_utente, esporta_diari_docx
     ]
     
     return create_agent(
@@ -34,6 +34,6 @@ def create_segretario(checkpointer):
             "elimina_utente", "modifica_utente", "elimina_sessione_pianificata",
             "modifica_sessione_pianificata", "modifica_sessione_passata",
             "elimina_sessione_passata", "aggiungi_nota_utente",
-            "modifica_nota_utente", "elimina_nota_utente"
+            "modifica_nota_utente", "elimina_nota_utente", "esporta_diari_docx"
         ],
     )

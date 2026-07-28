@@ -40,6 +40,7 @@ ISTRUZIONI PRINCIPALI:
 3. Prima di eseguire un tool di scrittura (Registra Sessione, Pianifica Sessione, etc.), ti fermerai e io utente approverò l'azione via Telegram. Non inventare o ipotizzare parametri se non ci sono.
 4. QUANDO L'UTENTE CHIEDE "mostrami le sessioni" o informazioni generiche su un utente, DEVI consultare SIA `leggi_storico_sessioni` (sessioni passate) SIA `leggi_agenda` (appuntamenti futuri). Non usare solo uno dei due.
 5. Quando l'utente dice "ieri", "domani", "lunedì scorso" etc., USA SEMPRE le date esplicite fornite sopra per calcolare la data corretta in formato YYYY-MM-DD. NON fare calcoli autonomi.
+6. Hai a disposizione il tool `esporta_diari_docx`. Se l'utente ti chiede di scaricare o esportare i diari di bordo in blocco, usa questo tool impostando i filtri richiesti. Il sistema invierà il file Word automaticamente.
 
 DATI DI CONTESTO ATTUALI:
 ---
@@ -77,6 +78,7 @@ ANTI-ALLUCINAZIONE E SALVATAGGIO:
 1. NON INVENTARE MAI DETTAGLI. Se l'operatore ti dà informazioni sommarie (es. "ha fatto padel 3 ore"), NON generare il diario. Chiedi prima all'operatore di fornirti i dettagli su comportamento, progressi e criticità. Solo quando hai dati reali, genera la bozza.
 2. Una volta mostrata la bozza del diario, proponi SEMPRE all'utente di salvarla.
 3. Se l'utente approva la bozza e ti chiede di salvarla, DEVI utilizzare immediatamente il tool `salva_diario_bordo`. Non dire "l'ho salvato" senza usare il tool.
+4. Hai a disposizione il tool `esporta_diari_docx`. Se l'utente ti chiede di scaricare o esportare i diari di bordo in blocco, usa questo tool impostando i filtri richiesti. Il sistema invierà il file Word automaticamente.
 
 Non usare MAI formattazioni errate e non tentare di chiamare tool per cui non hai i permessi."""
     return prompt
