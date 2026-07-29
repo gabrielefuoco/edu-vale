@@ -50,19 +50,47 @@ async def get_checkpointer():
     """Restituisce il checkpointer MongoDB condiviso."""
     return MongoDBSaver(sync_client, db_name="edu_agent_checkpoints")
 
-async def get_system_config():
-    """Recupera la configurazione di sistema (es. ID dei topic Telegram)."""
-    if client is None: return {}
+async def get_all_group_configs() -> list[dict]:
+    """Ritorna TUTTE le configurazioni di gruppo registrate."""
+    if client is None: return []
     db = client["edu_agent_system"]
-    config = await db["config"].find_one({"_id": "telegram_setup"})
-    return config or {}
+    return await db["groups"].find().to_list(length=100)
 
-async def save_system_config(config_data: dict):
-    """Salva la configurazione di sistema."""
+async def get_group_config(group_id: int) -> dict | None:
+    """Ritorna la config di UN specifico gruppo Telegram."""
+    if client is None: return None
+    db = client["edu_agent_system"]
+    return await db["groups"].find_one({"group_id": group_id})
+
+async def save_group_config(config_data: dict):
+    """Salva/aggiorna la config di un gruppo (upsert per group_id)."""
     if client is None: return
     db = client["edu_agent_system"]
-    await db["config"].update_one(
-        {"_id": "telegram_setup"}, 
-        {"$set": config_data}, 
+    await db["groups"].update_one(
+        {"group_id": config_data["group_id"]},
+        {"$set": config_data},
         upsert=True
     )
+
+async def migrate_old_config():
+    """Migra la vecchia configurazione singola nel nuovo formato multi-gruppo."""
+    if client is None: return
+    db = client["edu_agent_system"]
+    old_config = await db["config"].find_one({"_id": "telegram_setup"})
+    if old_config and "group_id" in old_config:
+        # Crea la nuova config assumendo che il primo admin nel .env sia l'owner
+        # Se non c'è, usiamo 'default'
+        allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
+        allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
+        owner_id = allowed_ids[0] if allowed_ids else "default"
+        
+        new_config = {
+            "group_id": old_config["group_id"],
+            "owner_id": owner_id,
+            "segreteria_id": old_config.get("segreteria_id"),
+            "diario_id": old_config.get("diario_id")
+        }
+        await save_group_config(new_config)
+        # Rimuove la vecchia per non migrarla più
+        await db["config"].delete_one({"_id": "telegram_setup"})
+        print(f"Migrata configurazione per il gruppo {new_config['group_id']} con owner {owner_id}")

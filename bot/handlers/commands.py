@@ -2,7 +2,7 @@ import os
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, ChatMemberUpdated
-from database.connection import get_collection, get_system_config, save_system_config, get_system_collection, get_checkpoint_collection
+from database.connection import get_collection, save_group_config, get_system_collection, get_checkpoint_collection, get_all_group_configs
 from bot.main_registry import AGENT_REGISTRY
 from utils.logger import logger, db_log
 
@@ -43,10 +43,11 @@ async def run_setup(bot, chat_id: int, user_id: str):
         # Salva su DB
         config_data = {
             "group_id": chat_id,
+            "owner_id": user_id,
             "segreteria_id": seg_id,
             "diario_id": diar_id
         }
-        await save_system_config(config_data)
+        await save_group_config(config_data)
         
         # Invia i messaggi di benvenuto nei topic per inizializzarli visivamente
         await bot.send_message(
@@ -186,7 +187,12 @@ async def cmd_reset(message: Message):
 async def cmd_nuke(message: Message):
     allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
     allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
-    uids_to_clear = list(set(allowed_ids + ["default"]))
+    
+    # Prendi tutti i group owner dal DB
+    all_groups = await get_all_group_configs()
+    db_owner_ids = [cfg["owner_id"] for cfg in all_groups if "owner_id" in cfg]
+    
+    uids_to_clear = list(set(allowed_ids + db_owner_ids + ["default"]))
     
     # Reset DB for all users
     for uid in uids_to_clear:
@@ -200,8 +206,12 @@ async def cmd_nuke(message: Message):
     col = await get_checkpoint_collection("checkpoint_writes")
     await col.delete_many({})
     
-    await db_log("INFO", "system", f"L'utente {message.from_user.id} ha lanciato il comando /nuke. Database svuotati per tutti gli utenti.")
-    await message.answer("💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione, Sessioni, Diari e Checkpoint di TUTTI gli utenti sono stati azzerati.")
+    # Svuota i setup dei gruppi
+    col_sys = await get_system_collection("groups")
+    await col_sys.delete_many({})
+    
+    await db_log("INFO", "system", f"L'utente {message.from_user.id} ha lanciato il comando /nuke. Database svuotati per tutti gli utenti e gruppi.")
+    await message.answer("💥 NUKE COMPLETATO: Memoria, DB Utenti, Programmazione, Sessioni, Diari, Checkpoint e Setup di TUTTI i gruppi sono stati azzerati.")
 
 
 

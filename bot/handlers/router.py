@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from langchain_core.messages import HumanMessage
 from services.ai_service import transcribe_audio
-from database.connection import get_collection, get_system_config
+from database.connection import get_collection, get_group_config
 from langchain_core.messages import HumanMessage, ToolMessage
 from bot.main_registry import AGENT_REGISTRY, _processing_locks
 from utils.helpers import invoke_with_backoff, send_split_message
@@ -72,20 +72,20 @@ async def route_message(message: Message):
         else:
             text = message.text
             
-        sys_config = await get_system_config()
-        segreteria_id = sys_config.get("segreteria_id")
-        diario_id = sys_config.get("diario_id")
-        
-        await db_log("DEBUG", "router", f"Messaggio da {user_id}. Thread: {message.message_thread_id}. SysConfig: Seg={segreteria_id}, Diar={diario_id}")
-        
-        # Se non è stato ancora configurato, ignoriamo qualsiasi messaggio non-comando
-        if not segreteria_id or not diario_id:
-            await db_log("DEBUG", "router", "Ignorato: Configurazione non trovata.")
+        group_config = await get_group_config(message.chat.id)
+        if not group_config:
+            await db_log("DEBUG", "router", "Ignorato: Configurazione di gruppo non trovata.")
             try:
-                await message.reply("⚠️ Esegui /setup per configurare i topic.")
+                await message.reply("⚠️ Esegui /setup per configurare i topic in questo gruppo.")
             except Exception:
                 pass
             return
+            
+        segreteria_id = group_config.get("segreteria_id")
+        diario_id = group_config.get("diario_id")
+        owner_id = group_config.get("owner_id", user_id)
+        
+        await db_log("DEBUG", "router", f"Messaggio da {user_id}. Thread: {message.message_thread_id}. GroupOwner: {owner_id}, Seg={segreteria_id}, Diar={diario_id}")
             
         # Ignora i messaggi nei topic non gestiti (incluso il topic Generale)
         if message.message_thread_id not in [segreteria_id, diario_id]:
@@ -95,7 +95,7 @@ async def route_message(message: Message):
         config = {
             "configurable": {
                 "thread_id": thread_key,
-                "user_id": user_id,
+                "user_id": owner_id,
                 "bot": message.bot,
                 "chat_id": message.chat.id
             }

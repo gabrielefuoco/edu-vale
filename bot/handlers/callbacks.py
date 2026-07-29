@@ -16,10 +16,14 @@ async def confirm_tools(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
     thread_key = f"{user_id}_{topic_id}"
     
+    from database.connection import get_group_config
+    group_config = await get_group_config(callback.message.chat.id)
+    owner_id = group_config.get("owner_id", user_id) if group_config else user_id
+    
     config = {
         "configurable": {
             "thread_id": thread_key,
-            "user_id": user_id,
+            "user_id": owner_id,
             "bot": callback.message.bot,
             "chat_id": callback.message.chat.id
         }
@@ -61,10 +65,14 @@ async def cancel_tools(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
     thread_key = f"{user_id}_{topic_id}"
     
+    from database.connection import get_group_config
+    group_config = await get_group_config(callback.message.chat.id)
+    owner_id = group_config.get("owner_id", user_id) if group_config else user_id
+    
     config = {
         "configurable": {
             "thread_id": thread_key,
-            "user_id": user_id,
+            "user_id": owner_id,
             "bot": callback.message.bot,
             "chat_id": callback.message.chat.id
         }
