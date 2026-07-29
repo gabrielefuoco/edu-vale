@@ -102,12 +102,7 @@ async def run_setup(bot, chat_id: int, user_id: str):
 @router.message(Command("setup"))
 async def cmd_setup(message: Message):
     user_id = str(message.from_user.id)
-    allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
-    allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
-    
-    if user_id not in allowed_ids:
-        return await message.answer("❌ Non sei autorizzato a eseguire il setup.")
-        
+
     if message.chat.type not in ["group", "supergroup"]:
         return await message.answer("⚠️ Questo comando deve essere eseguito all'interno di un Gruppo Telegram.")
         
@@ -117,12 +112,7 @@ async def cmd_setup(message: Message):
 @router.my_chat_member()
 async def on_bot_promoted(event: ChatMemberUpdated):
     user_id = str(event.from_user.id)
-    allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
-    allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
-    
-    if not allowed_ids or user_id not in allowed_ids:
-        return
-        
+
     if event.new_chat_member.status != "administrator":
         return
         
@@ -187,6 +177,9 @@ async def cmd_reset(message: Message):
 async def cmd_nuke(message: Message):
     allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
     allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
+    if str(message.from_user.id) not in allowed_ids:
+        return await message.answer("❌ Non sei autorizzato a usare nuke.")
+
     
     # Prendi tutti i group owner dal DB
     all_groups = await get_all_group_configs()

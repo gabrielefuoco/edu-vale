@@ -55,12 +55,8 @@ async def api_get_sessions(request):
         
     user_id = str(user_data.get("id"))
     
-    # Check if authorized
-    allowed_ids_str = os.getenv("AUTHORIZED_USER_IDS", "")
-    allowed_ids = [uid.strip() for uid in allowed_ids_str.split(",") if uid.strip()]
-    if user_id not in allowed_ids:
-        return web.json_response({"error": "Forbidden"}, status=403)
-        
+    # Nessun blocco: tutti possono accedere ai propri dati
+
     mongo_uri = os.getenv("MONGODB_URI")
     client = AsyncIOMotorClient(mongo_uri)
     db = client[f"edu_agent_{user_id}"]
